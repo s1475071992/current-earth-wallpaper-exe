@@ -8,6 +8,7 @@ mod sources;
 #[cfg(windows)] mod imaging;
 #[cfg(windows)] mod wallpaper;
 #[cfg(windows)] mod engine;
+#[cfg(windows)] mod metrics;
 #[cfg(windows)] mod autostart;
 
 #[cfg(not(windows))]
@@ -404,11 +405,11 @@ fn main() {
     if std::env::args().any(|arg|arg=="--self-test-render"){
         let p=std::env::temp_dir().join(format!("cew_test_{}.bmp",std::process::id()));
         let out=std::env::temp_dir().join(format!("cew_render_{}.bmp",std::process::id()));
-        let pixels=vec![200u8;256*256*4];
-        wallpaper::write_bitmap(&p,256,256,&pixels).expect("write test image");
-        let image=imaging::load_scaled(&p,192,None).expect("WIC render");
-        wallpaper::compose(&out,640,480,&image,true).expect("compose image");
-        assert!(std::fs::metadata(&out).unwrap().len()>640*480*4);
+        wallpaper::write_test_pattern(&p,4096).expect("write 4K BMP image");
+        let image=imaging::load_scaled(&p,1200,None).expect("WIC 4K downsample");
+        wallpaper::compose(&out,3840,2160,&image,true).expect("compose UHD wallpaper");
+        assert!(std::fs::metadata(&out).unwrap().len()>3840*2160*4);
+        metrics::write_render_report().expect("save memory report");
         let _=std::fs::remove_file(p);
         let _=std::fs::remove_file(out);
         return;

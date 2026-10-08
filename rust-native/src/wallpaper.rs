@@ -47,6 +47,26 @@ pub fn write_bitmap(dest:&Path,w:u32,h:u32,bgra:&[u8])->Result<(),String>{
     }
     file.flush().map_err(|e|e.to_string())
 }
+
+/// Generate a large, valid test BMP without ever keeping its full frame in memory.
+pub fn write_test_pattern(dest:&Path,side:u32)->Result<(),String>{
+    if !(256..=8192).contains(&side){return Err("Unsupported test size".into());}
+    let mut out=BufWriter::new(File::create(dest).map_err(|e|e.to_string())?);
+    header(&mut out,side,side)?;
+    let mut row=vec![0u8;side as usize*4];
+    for y in 0..side {
+        for x in 0..side{
+            let off=x as usize*4;
+            row[off]=(x&255) as u8;
+            row[off+1]=(y&255) as u8;
+            row[off+2]=((x+y)&255) as u8;
+            row[off+3]=255;
+        }
+        out.write_all(&row).map_err(|e|e.to_string())?;
+    }
+    out.flush().map_err(|e|e.to_string())
+}
+
 fn glyph(c:char)->[u8;7]{
     match c {
         '0'=>[14,17,19,21,25,17,14], '1'=>[4,12,4,4,4,4,14],

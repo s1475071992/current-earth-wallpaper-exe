@@ -69,5 +69,6 @@ jobs:
             rust-native/target/release/CurrentEarthWallpaperNative.exe
             rust-native/target/release/SHA256.txt
             rust-native/target/release/memory-idle.json
+            rust-native/target/release/memory-render.json
           retention-days: 30
           if-no-files-found: error
