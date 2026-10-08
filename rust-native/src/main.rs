@@ -316,6 +316,8 @@ mod winapp {
             set_text(h(self.vdesk_label),lang_text(l,26));
             set_text(h(self.vdesk_source_label),lang_text(l,27));
             set_text(h(self.vdesk_hint),lang_text(l,28));
+            // Both diagnostics buttons need their localized captions after UI refactoring.
+            set_text(h(self.vdesk_probe),lang_text(l,29));
             set_text(h(self.monitor_probe),match l{
                 0=>"检测显示器",1=>"Detect displays",2=>"モニターを検出",_=>"모니터 감지",
             });
