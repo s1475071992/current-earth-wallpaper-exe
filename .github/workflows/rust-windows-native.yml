@@ -47,6 +47,13 @@ jobs:
             Get-Content "target/release/live-goes.json" | Write-Host
           }
           if ($p.ExitCode -ne 0) { throw "At least one GOES endpoint was unreachable or returned undecodable image" }
+      - name: Read-only virtual desktop registry diagnostic
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "target/release/CurrentEarthWallpaperNative.exe" -ArgumentList "--virtual-desktop-probe" -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "Desktop registry probe crashed" }
+          if (-not (Test-Path "target/release/virtual-desktop-probe.json")) { throw "Desktop diagnostic report missing" }
+          Get-Content "target/release/virtual-desktop-probe.json" | Write-Host
       - name: Idle memory sampling (real Windows process)
         shell: pwsh
         run: |
@@ -80,5 +87,6 @@ jobs:
             rust-native/target/release/memory-idle.json
             rust-native/target/release/memory-render.json
             rust-native/target/release/live-goes.json
+            rust-native/target/release/virtual-desktop-probe.json
           retention-days: 30
           if-no-files-found: error

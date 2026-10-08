@@ -47,9 +47,15 @@ fn download_image<F:FnMut(String)>(
     check(cancel)
 }
 pub fn run_once(cfg:&AppConfig,cancel:&AtomicBool,mut log:impl FnMut(String))->Result<PathBuf,String>{
-    run_once_for(cfg,None,cancel,&mut log)
+    run_once_in_desktop(cfg,None,cancel,&mut log)
+}
+pub fn run_once_in_desktop(cfg:&AppConfig,desktop:Option<&str>,cancel:&AtomicBool,mut log:impl FnMut(String))->Result<PathBuf,String>{
+    run_once_for_in_desktop(cfg,None,desktop,cancel,&mut log)
 }
 pub fn run_once_for(cfg:&AppConfig,display:Option<&Monitor>,cancel:&AtomicBool,mut log:impl FnMut(String))->Result<PathBuf,String>{
+    run_once_for_in_desktop(cfg,display,None,cancel,&mut log)
+}
+pub fn run_once_for_in_desktop(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,cancel:&AtomicBool,mut log:impl FnMut(String))->Result<PathBuf,String>{
     let begin=Instant::now();
     let folder=if cfg.save_path.trim().is_empty(){app_dir().join("wallpapers")}
         else{PathBuf::from(&cfg.save_path)};
@@ -143,7 +149,13 @@ pub fn run_once_for(cfg:&AppConfig,display:Option<&Monitor>,cancel:&AtomicBool,m
     log(format!("Compose desktop BMP: {}x{}",w,h));
     wallpaper::compose(&path,w,h,&image,cfg.watermark_on)?;
     check(cancel)?;
-    log("Windows: SystemParametersInfoW(SPI_SETDESKWALLPAPER)".into());
+    // Protect other virtual desktops: never write if the user switched during decode.
+    if let Some(id)=desktop {
+        let now=crate::virtual_desktop::snapshot()?.current;
+        if now.as_deref()!=Some(id) {return Err("Virtual desktop changed before wallpaper assignment".into());}
+    }
+    check(cancel)?;
+    log("Windows: apply wallpaper on active desktop / selected monitor".into());
     match display {
         Some(d)=>crate::monitor::assign(&d.id,&path)?,
         None=>wallpaper::set_wallpaper(&path)?,

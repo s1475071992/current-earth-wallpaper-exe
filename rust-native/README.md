@@ -39,3 +39,40 @@ Enable **Different satellite for each monitor**, select a monitor and its source
 ## Windows virtual desktops
 
 The JSON configuration reserves virtual_desktop_sources (virtual desktop GUID → satellite source), but automatic per-virtual-desktop wallpaper assignment is NOT yet available. Microsoft's public IVirtualDesktopManager does not expose a virtual desktop wallpaper setter. Private Explorer COM methods are Windows build-dependent; simultaneous per-monitor and per-virtual-desktop wallpapers can conflict even in Windows 11. The app does not expose an inert virtual desktop toggle. Target OS version/build (winver) is required to implement and verify a compatible adapter.
+
+
+## Experimental Windows 11 26H2 virtual desktops (build 26300.9550)
+
+This opt-in feature uses **read-only Explorer registry state** to discover ordered virtual
+desktop GUIDs and the active desktop. PowerToys uses a similar registry strategy, but
+this is not a Microsoft-supported contract. It can break on a Windows update. No
+undocumented Explorer COM interfaces are invoked and no virtual desktop registry
+values are written.
+
+1. Create at least two desktops with Win+Tab and switch once.
+2. In the app enable **Virtual desktop wallpapers (26H2 compatibility)**.
+3. Select "Desktop 1"/"Desktop 2" and choose its default satellite.
+4. To set *both* physical monitors independently for each desktop, additionally
+   enable "Different satellite for each monitor": select virtual desktop, then physical
+   monitor, then satellite in that monitor's dropdown.
+5. Click Start updating. Every second the app detects the active desktop. On switching,
+   it cancels work for the old desktop and restores a cached BMP if available, followed
+   by a fresh satellite update. If the active GUID cannot be established, it pauses
+   writes instead of applying the wrong wallpaper.
+
+Selection precedence: (desktop,monitor) override > desktop default > monitor default >
+global default. The per-desktop mapping is retained on restart. Cache is bounded to
+48 file entries under LOCALAPPDATA/CurrentEarthWallpaper/virtual-cache, and controls
+keep the Python main branch unchanged.
+
+**Known limitations:** Windows 11 itself may revert per-monitor wallpapers when
+virtual desktops switch, and the system's wallpaper preferences may conflict with
+this app's combination of per-virtual-desktop and per-monitor assignments. This uses
+best-effort restoration after the switch rather than modifying private Explorer
+interfaces. GitHub Windows 2022 CI cannot reproduce the user's Windows 11 26H2
+desktop compositor; Windows 11 26H2 dual-monitor real-world verification is still
+required before calling the mode production-ready.
+
+Diagnostic mode: run EXE with --virtual-desktop-probe. It produces read-only
+"virtual-desktop-probe.json" next to the EXE with detected IDs/current status; no
+registry modifications or wallpaper changes.
