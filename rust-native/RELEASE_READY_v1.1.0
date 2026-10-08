@@ -2,3 +2,5 @@ Release approval: 2026-10-08
 Current Earth Wallpaper 1.1.0 for Windows x64
 Intentionally UN-SIGNED, per user's explicit request.
 Build, test, package and release from this exact Rust branch commit.
+
+Release pipeline retry #2: standard non-fatal Clippy warnings; all tests and release build enforced.
