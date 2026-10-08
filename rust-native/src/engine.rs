@@ -55,7 +55,16 @@ pub fn run_once_in_desktop(cfg:&AppConfig,desktop:Option<&str>,cancel:&AtomicBoo
 pub fn run_once_for(cfg:&AppConfig,display:Option<&Monitor>,cancel:&AtomicBool,mut log:impl FnMut(String))->Result<PathBuf,String>{
     run_once_for_in_desktop(cfg,display,None,cancel,&mut log)
 }
-pub fn run_once_for_in_desktop(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,cancel:&AtomicBool,mut log:impl FnMut(String))->Result<PathBuf,String>{
+/// Generate and store a stable BMP for one (virtual desktop, monitor) pair,
+/// without changing Windows wallpaper. The switch handler exclusively decides
+/// when images are shown on a physical monitor.
+pub fn render_pair(cfg:&AppConfig,desktop:&str,display:&Monitor,cancel:&AtomicBool,log:impl FnMut(String))->Result<PathBuf,String>{
+    run_once_impl(cfg,Some(display),Some(desktop),true,cancel,log)
+}
+pub fn run_once_for_in_desktop(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,cancel:&AtomicBool,log:impl FnMut(String))->Result<PathBuf,String>{
+    run_once_impl(cfg,display,desktop,false,cancel,log)
+}
+fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,render_only:bool,cancel:&AtomicBool,mut log:impl FnMut(String))->Result<PathBuf,String>{
     let begin=Instant::now();
     let folder=if cfg.save_path.trim().is_empty(){app_dir().join("wallpapers")}
         else{PathBuf::from(&cfg.save_path)};
@@ -158,9 +167,17 @@ pub fn run_once_for_in_desktop(cfg:&AppConfig,display:Option<&Monitor>,desktop:O
         }
     }
     check(cancel)?;
+    if render_only {
+        let id=desktop.ok_or("Missing virtual desktop in pair renderer")?;
+        let m=display.ok_or("Missing physical monitor in pair renderer")?;
+        let stable=crate::virtual_cache::save(&folder,Some(id),Some(m),&cfg.image_source,&path)?;
+        log(format!("Saved pair image: desktop={} monitor={} source={} path={}",
+            id,m.id,cfg.image_source,stable.display()));
+        return Ok(stable);
+    }
     if let Some(id)=desktop {
         if display.is_some(){
-            return Err("Combined per-monitor satellite + virtual desktops needs a composite wallpaper".into());
+            return Err("Use render_pair for independent virtual desktop and monitor images".into());
         }
         // An attached single physical display produces an explicit desktop+monitor
         // image file. Multiple monitors with one virtual-desktop wallpaper use 'all'.
