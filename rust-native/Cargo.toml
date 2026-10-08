@@ -43,5 +43,5 @@ windows = { version = "0.58", features = [
 opt-level = "z"
 lto = true
 codegen-units = 1
-panic = "abort"
+panic = "unwind" # Worker catch_unwind must remain effective in production
 strip = true
