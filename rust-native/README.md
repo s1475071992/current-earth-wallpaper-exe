@@ -30,6 +30,29 @@ are maintained in the `rust-windows-native` branch.
   network downloads, abort/disable the helper after crashes or 15-second timeouts.
   Never silently fall back to applying the virtual wallpaper globally.
 
+## Unified wallpaper source settings (v1.1 beta)
+
+The settings window now contains **one checkbox** for desktop + monitor pair mode,
+followed by exactly three selection controls:
+
+1. **Virtual desktop** — choose the desktop to configure.
+2. **Physical monitor** — choose the connected display to configure.
+3. **Satellite source for this pair** — one source selector, not two separate controls.
+
+Click **Detect displays** to re-enumerate attached monitors, see the current count
+and pixel dimensions in the log, and retain the selected device when possible.
+**Check desktops** separately refreshes the virtual-desktop diagnostic. Existing
+per-display and per-desktop source overrides remain readable; an explicit pair
+choice takes priority. Existing saved single-mode selections are migrated into
+the unified checkbox mode without erasing their mappings.
+
+With pair mode disabled the global default source still works. With pair mode
+enabled, background scheduled refresh maintains a fixed BMP for every
+(virtual desktop GUID, physical monitor device ID) combination. Switching
+desktops only reapplies existing monitor BMPs, never downloading new images.
+This Windows 11 emulation remains experimental until verified on a real
+multi-monitor, multi-virtual-desktop system.
+
 ## Usage
 
 Download the beta EXE from GitHub Actions artifacts, or use the stable v1.0 Release. No Python environment is needed.
