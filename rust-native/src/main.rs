@@ -92,14 +92,14 @@ mod winapp {
         SendMessageW(combo, CB_SETCURSEL, index, 0);
     }
     unsafe fn check(hwnd: HWND, value: bool) {
-        SendMessageW(hwnd, BM_SETCHECK, if value { BST_CHECKED as usize } else { BST_UNCHECKED as usize }, 0);
+        SendMessageW(hwnd, BM_SETCHECK, if value { 1usize } else { 0usize }, 0);
     }
     unsafe fn selected(hwnd: HWND) -> usize {
         let result = SendMessageW(hwnd, CB_GETCURSEL, 0, 0);
         if result < 0 { 0 } else { result as usize }
     }
     unsafe fn checked(hwnd: HWND) -> bool {
-        SendMessageW(hwnd, BM_GETCHECK, 0, 0) == BST_CHECKED as isize
+        SendMessageW(hwnd, BM_GETCHECK, 0, 0) == 1isize
     }
 
     impl Ui {
@@ -283,7 +283,7 @@ mod winapp {
                 hInstance: h_instance,
                 hIcon: LoadIconW(null_mut(), IDI_APPLICATION),
                 hCursor: LoadCursorW(null_mut(), IDC_ARROW),
-                hbrBackground: (COLOR_WINDOW as usize + 1) as _,
+                hbrBackground: (5usize + 1) as _,
                 lpszMenuName: null(),
                 lpszClassName: cls.as_ptr(),
             };
@@ -296,7 +296,6 @@ mod winapp {
             );
             if hwnd.is_null() { return; }
             ShowWindow(hwnd, SW_SHOW);
-            UpdateWindow(hwnd);
             let mut msg: MSG = std::mem::zeroed();
             while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
                 TranslateMessage(&msg);
