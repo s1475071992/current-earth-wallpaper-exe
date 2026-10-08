@@ -62,6 +62,15 @@ pub fn pair_plan(cfg:&AppConfig,desktops:&[String],monitors:&[String])->Result<V
     Ok(jobs)
 }
 
+/// Preserve the selected desktop while Explorer changes the desktop GUID list.
+/// If it was deleted, prefer the current desktop and never index an empty list.
+pub fn picker_selection_index(ids:&[String],previous:Option<&str>,current:Option<&str>)->Option<usize>{
+    if ids.is_empty(){return None;}
+    previous.and_then(|id|ids.iter().position(|v|v==id))
+        .or_else(||current.and_then(|id|ids.iter().position(|v|v==id)))
+        .or(Some(0))
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
@@ -96,6 +105,13 @@ mod tests{
             vec!["GOES-East","风云4B","NASA EPIC","Himawari-9","GOES-West","风云4B"]);
         assert_ne!(jobs[0].desktop_id,jobs[2].desktop_id);
         assert_ne!(jobs[0].monitor_id,jobs[1].monitor_id);
+    }
+    #[test]fn desktop_picker_retains_selection_across_add_remove(){
+        let ids=vec!["id-b".into(),"id-c".into(),"id-d".into()];
+        assert_eq!(picker_selection_index(&ids,Some("id-c"),Some("id-d")),Some(1));
+        assert_eq!(picker_selection_index(&ids,Some("deleted"),Some("id-d")),Some(2));
+        assert_eq!(picker_selection_index(&ids,None,None),Some(0));
+        assert_eq!(picker_selection_index(&[],Some("id-c"),Some("id-d")),None);
     }
     #[test]fn rejects_non_guids_and_empty(){
         let cfg=AppConfig::default();
