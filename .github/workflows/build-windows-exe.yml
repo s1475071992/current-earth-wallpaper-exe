@@ -1,0 +1,56 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Extract application sources
+        shell: pwsh
+        run: |
+          python -c "import tarfile; tarfile.open('current-earth-wallpaper-source.tar.xz', 'r:xz').extractall('.', filter='data')"
+      - name: Install dependencies and CA certificate
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --prefer-binary -r requirements.txt 'pyinstaller>=6.8,<7' certifi
+          python -c "import certifi,shutil,pathlib; pathlib.Path('certs').mkdir(exist_ok=True); shutil.copyfile(certifi.where(), 'certs/cacert.pem')"
+      - name: Run tests
+        shell: pwsh
+        run: python -m unittest discover -s tests -v
+      - name: Build executable
+        shell: pwsh
+        run: python -m PyInstaller --clean --noconfirm CurrentEarthWallpaper.spec
+      - name: Check PE and checksum
+        shell: pwsh
+        run: |
+          $exe = 'dist/CurrentEarthWallpaper.exe'
+          if (-not (Test-Path $exe)) { throw "Missing EXE" }
+          $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $exe))
+          if ($bytes.Length -lt 1000000 -or $bytes[0] -ne 77 -or $bytes[1] -ne 90) { throw "Invalid Windows EXE" }
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash *CurrentEarthWallpaper.exe" | Set-Content -Path dist/CurrentEarthWallpaper.exe.sha256 -Encoding ascii
+          Write-Host "Windows EXE size=$($bytes.Length), SHA256=$hash"
+      - name: Upload EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: CurrentEarthWallpaper-Windows-x64
+          path: |
+            dist/CurrentEarthWallpaper.exe
+            dist/CurrentEarthWallpaper.exe.sha256
+          if-no-files-found: error
+          retention-days: 30
