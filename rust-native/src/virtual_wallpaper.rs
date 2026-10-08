@@ -32,6 +32,11 @@ const IID_SERVICE_PROVIDER:Guid=Guid{data1:0x6D5140C1,data2:0x7436,data3:0x11CE,
 const SERVICE_VDM:Guid=Guid{data1:0xC5E0CDCA,data2:0x7B6E,data3:0x41B2,data4:[0x9F,0xC4,0xD9,0x39,0x75,0xCC,0x46,0x7B]};
 const IID_VDM:Guid=Guid{data1:0x53F5CA0B,data2:0x158F,data3:0x4124,data4:[0x90,0x0C,0x05,0x71,0x58,0x06,0x0B,0x27]};
 type Raw=*mut c_void;
+// Verified against Windows 11 24H2 IVirtualDesktopManagerInternal with the extra
+// SwitchDesktopAndMoveForegroundView slot. 13 is RemoveDesktop (unsafe to call as FindDesktop);
+// 16 is SetDesktopName, NOT SetDesktopWallpaper.
+const SLOT_FIND_DESKTOP:usize=14;
+const SLOT_SET_DESKTOP_WALLPAPER:usize=17;
 #[link(name="ole32")]
 unsafe extern "system" {
     fn CoInitializeEx(reserved:Raw,flags:u32)->i32;
@@ -106,9 +111,9 @@ fn access() ->Result<(Apartment,Com),String>{
 }
 fn find(manager:&Com,target:&Guid)->Result<Com,String>{
     unsafe{
-        // Windows 11 build 26100..26399: vtable 13 == FindDesktop(GUID*,IVirtualDesktop**).
+        // Windows 11 build 26100..26399: vtable 14 == FindDesktop(GUID*,IVirtualDesktop**).
         let find:unsafe extern "system" fn(Raw,*const Guid,*mut Raw)->i32=
-            std::mem::transmute(vtable(manager.0,13));
+            std::mem::transmute(vtable(manager.0,SLOT_FIND_DESKTOP));
         let mut desktop:Raw=null_mut();
         let hr=find(manager.0,target,&mut desktop);
         if hr<0{return Err(error("FindDesktop",hr));}
@@ -150,9 +155,9 @@ pub fn apply_child(desktop_id:&str,image:&Path)->Result<(),String>{
         struct Text(Raw);
         impl Drop for Text {fn drop(&mut self){unsafe{let _=WindowsDeleteString(self.0);}}}
         let text=Text(text);
-        // Windows 11 build 26100..26399: manager vtable 16 == SetDesktopWallpaper.
+        // Windows 11 build 26100..26399: manager vtable 17 == SetDesktopWallpaper.
         let set:unsafe extern "system" fn(Raw,Raw,Raw)->i32=
-            std::mem::transmute(vtable(manager.0,16));
+            std::mem::transmute(vtable(manager.0,SLOT_SET_DESKTOP_WALLPAPER));
         let hr=set(manager.0,desktop.0,text.0);
         if hr<0{return Err(error("SetDesktopWallpaper",hr));}
     }
@@ -207,6 +212,10 @@ mod tests{
             assert_eq!(guid_str(&g),value);
         }
         assert!(guid("../../../etc/passwd").is_err());
+    }
+    #[test]fn virtual_desktop_vtable_indices_are_not_destructive_methods(){
+        assert_eq!(SLOT_FIND_DESKTOP,14, "13 would be RemoveDesktop on Win11 24H2");
+        assert_eq!(SLOT_SET_DESKTOP_WALLPAPER,17, "16 would be SetDesktopName");
     }
     #[test]fn version_gate_description(){
         // Never apply to unknown Win10/Win11 versions.
