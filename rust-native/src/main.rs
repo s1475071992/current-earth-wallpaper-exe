@@ -643,6 +643,10 @@ mod winapp {
                         let mut success=0usize;
                         let mut failed=Vec::new();
                         let mut last=std::path::PathBuf::new();
+                        // Render each monitor separately, but download a satellite
+                        // only once if several pairs select the same source.
+                        let mut source_cache=crate::engine::CycleSourceCache::for_sources(
+                            plan.iter().map(|pair|pair.source.as_str()));
                         for (i,pair) in plan.iter().enumerate(){
                             if cancel.load(Ordering::Relaxed){return Err("Cancelled".into());}
                             let m=monitors.iter().find(|m|m.id==pair.monitor_id)
@@ -656,7 +660,8 @@ mod winapp {
                             }else{
                                 let mut one=cfg.clone();
                                 one.image_source=pair.source.clone();
-                                crate::engine::render_pair(&one,&pair.desktop_id,m,&cancel,&mut report)
+                                crate::engine::render_pair_cached(
+                                    &one,&pair.desktop_id,m,&mut source_cache,&cancel,&mut report)
                             };
                             match path{
                                 Ok(path)=>{
