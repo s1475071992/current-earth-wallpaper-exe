@@ -82,10 +82,10 @@ mod winapp {
     }
     fn lang_text(lang: usize, key: usize) -> &'static str {
         const DICT: [[&str; 30]; 4] = [
-            ["实时地球壁纸 · v1.0", "卫星图源", "壁纸大小", "界面语言", "更新间隔（分钟）", "显示托盘图标", "显示时间水印", "开始更新", "退出程序", "配置已保存。壁纸下载与渲染引擎正在迁移。", "原生引擎尚未完成，请勿替代正式版。", "无法隐藏托盘：Ctrl+Alt+E 已被其他软件占用。", "显示主窗口", "图像保存目录", "开机自动更新", "停止更新", "正在更新壁纸…", "执行日志", "清空显示", "关闭窗口：点击“是”隐藏并继续后台更新；点击“否”彻底退出并停止更新；“取消”留在界面。", "关闭窗口", "将运行日志保存到文件", "为每台物理显示器分别选择卫星源", "显示器", "该显示器的卫星源", "虚拟桌面独立壁纸（26H2 兼容模式）", "虚拟桌面", "该虚拟桌面的卫星源", "关闭后仍保留各桌面配置", "检测虚拟桌面"],
-            ["Current Earth Wallpaper · v1.0", "Satellite source", "Wallpaper size", "Interface language", "Update interval (minutes)", "Show tray icon", "Time watermark", "Start updating", "Exit app", "Settings saved. Native image engine is being ported.", "Native image engine isn't ready yet. Keep using the stable build.", "Cannot hide tray: Ctrl+Alt+E is in use.", "Show window", "Image folder", "Start with Windows", "Stop updating", "Updating wallpaper...", "Execution log", "Clear view", "Close window: Yes hides and keeps updating; No quits and stops; Cancel stays.", "Close window", "Save logs to file", "Different satellite for each monitor", "Monitor", "Satellite for this monitor", "Virtual desktop wallpapers (26H2 compatibility)", "Virtual desktop", "Satellite for this desktop", "Settings retained when disabled", "Check desktops"],
-            ["リアルタイム地球壁紙 · v1.0", "衛星ソース", "壁紙の大きさ", "表示言語", "更新間隔（分）", "トレイアイコンを表示", "時刻の透かし", "更新開始", "終了", "設定を保存しました。画像エンジンは移植中です。", "画像エンジンはまだ未完成です。", "トレイを隠せません。Ctrl+Alt+E は使用中です。", "ウィンドウを表示", "画像の保存先", "Windows起動時に自動更新", "更新停止", "壁紙を更新中…", "実行ログ", "表示を消去", "はい：非表示で更新継続。いいえ：終了して更新停止。キャンセル：戻る。", "ウィンドウを閉じる", "ログをファイルに保存", "モニターごとに衛星を選択", "モニター", "このモニターの衛星", "仮想デスクトップ別壁紙（26H2対応）", "仮想デスクトップ", "このデスクトップの衛星", "無効でも設定は保持されます", "デスクトップ検出"],
-            ["실시간 지구 배경화면 · v1.0", "위성 소스", "배경화면 크기", "인터페이스 언어", "갱신 간격(분)", "트레이 아이콘 표시", "시간 워터마크", "업데이트 시작", "종료", "설정 저장됨. 이미지 엔진을 이식하는 중입니다.", "이미지 엔진이 아직 준비되지 않았습니다.", "트레이 숨기기 불가: Ctrl+Alt+E 사용 중.", "창 표시", "이미지 저장 폴더", "Windows 시작 시 자동 업데이트", "업데이트 중지", "배경화면 갱신 중…", "실행 로그", "보기 지우기", "예: 숨기고 계속 업데이트. 아니요: 종료 및 중지. 취소: 돌아가기.", "창 닫기", "실행 로그 파일에 저장", "모니터별로 위성 소스 설정", "모니터", "이 모니터의 위성", "가상 데스크톱별 배경화면 (26H2 호환)", "가상 데스크톱", "이 데스크톱의 위성", "사용 중지 시에도 설정 유지", "바탕 화면 감지"],
+            ["实时地球壁纸 · v1.1 测试版", "卫星图源", "壁纸大小", "界面语言", "更新间隔（分钟）", "显示托盘图标", "显示时间水印", "开始更新", "退出程序", "配置已保存。壁纸下载与渲染引擎正在迁移。", "原生引擎尚未完成，请勿替代正式版。", "无法隐藏托盘：Ctrl+Alt+E 已被其他软件占用。", "显示主窗口", "图像保存目录", "开机自动更新", "停止更新", "正在更新壁纸…", "执行日志", "清空显示", "关闭窗口：点击“是”隐藏并继续后台更新；点击“否”彻底退出并停止更新；“取消”留在界面。", "关闭窗口", "将运行日志保存到文件", "为每台物理显示器分别选择卫星源", "显示器", "该显示器的卫星源", "虚拟桌面独立壁纸（26H2 兼容模式）", "虚拟桌面", "该虚拟桌面的卫星源", "关闭后仍保留各桌面配置", "检测虚拟桌面"],
+            ["Current Earth Wallpaper · v1.1 beta", "Satellite source", "Wallpaper size", "Interface language", "Update interval (minutes)", "Show tray icon", "Time watermark", "Start updating", "Exit app", "Settings saved. Native image engine is being ported.", "Native image engine isn't ready yet. Keep using the stable build.", "Cannot hide tray: Ctrl+Alt+E is in use.", "Show window", "Image folder", "Start with Windows", "Stop updating", "Updating wallpaper...", "Execution log", "Clear view", "Close window: Yes hides and keeps updating; No quits and stops; Cancel stays.", "Close window", "Save logs to file", "Different satellite for each monitor", "Monitor", "Satellite for this monitor", "Virtual desktop wallpapers (26H2 compatibility)", "Virtual desktop", "Satellite for this desktop", "Settings retained when disabled", "Check desktops"],
+            ["リアルタイム地球壁紙 · v1.1 ベータ", "衛星ソース", "壁紙の大きさ", "表示言語", "更新間隔（分）", "トレイアイコンを表示", "時刻の透かし", "更新開始", "終了", "設定を保存しました。画像エンジンは移植中です。", "画像エンジンはまだ未完成です。", "トレイを隠せません。Ctrl+Alt+E は使用中です。", "ウィンドウを表示", "画像の保存先", "Windows起動時に自動更新", "更新停止", "壁紙を更新中…", "実行ログ", "表示を消去", "はい：非表示で更新継続。いいえ：終了して更新停止。キャンセル：戻る。", "ウィンドウを閉じる", "ログをファイルに保存", "モニターごとに衛星を選択", "モニター", "このモニターの衛星", "仮想デスクトップ別壁紙（26H2対応）", "仮想デスクトップ", "このデスクトップの衛星", "無効でも設定は保持されます", "デスクトップ検出"],
+            ["실시간 지구 배경화면 · v1.1 베타", "위성 소스", "배경화면 크기", "인터페이스 언어", "갱신 간격(분)", "트레이 아이콘 표시", "시간 워터마크", "업데이트 시작", "종료", "설정 저장됨. 이미지 엔진을 이식하는 중입니다.", "이미지 엔진이 아직 준비되지 않았습니다.", "트레이 숨기기 불가: Ctrl+Alt+E 사용 중.", "창 표시", "이미지 저장 폴더", "Windows 시작 시 자동 업데이트", "업데이트 중지", "배경화면 갱신 중…", "실행 로그", "보기 지우기", "예: 숨기고 계속 업데이트. 아니요: 종료 및 중지. 취소: 돌아가기.", "창 닫기", "실행 로그 파일에 저장", "모니터별로 위성 소스 설정", "모니터", "이 모니터의 위성", "가상 데스크톱별 배경화면 (26H2 호환)", "가상 데스크톱", "이 데스크톱의 위성", "사용 중지 시에도 설정 유지", "바탕 화면 감지"],
         ];
         DICT[lang.min(3)][key.min(29)]
     }
@@ -288,6 +288,7 @@ mod winapp {
                 last_maintenance:Instant::now(),
             };
             ui.localize();
+            ui.sync_virtual_source();
             ui.update_tray();
             ui.append_event("Current Earth Wallpaper v1.1 beta · 双模式测试版".into());
             ui.append_event("应用已启动；右上角 × 可以选择后台运行或彻底退出。".into());
@@ -325,7 +326,12 @@ mod winapp {
             set_text(h(self.vdesk_source_label),lang_text(l,27));
             set_text(h(self.vdesk_hint),lang_text(l,28));
             if self.cfg.per_monitor_enabled && self.cfg.virtual_desktops_enabled{
-                set_text(h(self.vdesk_hint),"双模式：先选虚拟桌面，再选显示器，为两者组合选择卫星。");
+                set_text(h(self.vdesk_hint),match self.cfg.language_index(){
+                    0=>"双模式：先选虚拟桌面，再选显示器，为组合选择卫星。",
+                    1=>"Dual mode: choose desktop, monitor, then satellite.",
+                    2=>"2つのモード：デスクトップ、モニター、衛星を選択。",
+                    _=>"듀얼 모드: 데스크톱, 모니터, 위성 순으로 선택.",
+                });
             }
             set_text(h(self.vdesk_probe),lang_text(l,29));
         }
