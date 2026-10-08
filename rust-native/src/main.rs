@@ -40,6 +40,8 @@ mod winapp {
     const ID_WATERMARK: u16 = 106;
     const ID_START: u16 = 107;
     const ID_EXIT: u16 = 108;
+    const ID_PATH: u16 = 109;
+    const ID_AUTOSTART: u16 = 110;
     const ID_SHOW: u16 = 201;
     const TIMER_ID:usize=1;
     const REFRESH_DONE:u32=WM_APP+2;
@@ -54,13 +56,13 @@ mod winapp {
         unsafe { SetWindowTextW(hwnd, w(text).as_ptr()); }
     }
     fn lang_text(lang: usize, key: usize) -> &'static str {
-        const DICT: [[&str; 13]; 4] = [
-            ["实时地球壁纸 · Rust 原生预览", "卫星图源", "壁纸大小", "界面语言", "更新间隔（分钟）", "显示托盘图标", "显示时间水印", "开始更新", "退出程序", "配置已保存。壁纸下载与渲染引擎正在迁移。", "原生引擎尚未完成，请勿替代正式版。", "无法隐藏托盘：Ctrl+Alt+E 已被其他软件占用。", "显示主窗口"],
-            ["Current Earth Wallpaper · Rust Native Preview", "Satellite source", "Wallpaper size", "Interface language", "Update interval (minutes)", "Show tray icon", "Time watermark", "Start updating", "Exit app", "Settings saved. Native image engine is being ported.", "Native image engine isn't ready yet. Keep using the stable build.", "Cannot hide tray: Ctrl+Alt+E is in use.", "Show window"],
-            ["リアルタイム地球壁紙 · Rust ネイティブ", "衛星ソース", "壁紙の大きさ", "表示言語", "更新間隔（分）", "トレイアイコンを表示", "時刻の透かし", "更新開始", "終了", "設定を保存しました。画像エンジンは移植中です。", "画像エンジンはまだ未完成です。", "トレイを隠せません。Ctrl+Alt+E は使用中です。", "ウィンドウを表示"],
-            ["실시간 지구 배경화면 · Rust 네이티브", "위성 소스", "배경화면 크기", "인터페이스 언어", "갱신 간격(분)", "트레이 아이콘 표시", "시간 워터마크", "업데이트 시작", "종료", "설정 저장됨. 이미지 엔진을 이식하는 중입니다.", "이미지 엔진이 아직 준비되지 않았습니다.", "트레이 숨기기 불가: Ctrl+Alt+E 사용 중.", "창 표시"],
+        const DICT: [[&str; 17]; 4] = [
+            ["实时地球壁纸 · Rust 原生预览", "卫星图源", "壁纸大小", "界面语言", "更新间隔（分钟）", "显示托盘图标", "显示时间水印", "开始更新", "退出程序", "配置已保存。壁纸下载与渲染引擎正在迁移。", "原生引擎尚未完成，请勿替代正式版。", "无法隐藏托盘：Ctrl+Alt+E 已被其他软件占用。", "显示主窗口", "图像保存目录", "开机自动更新", "停止更新", "正在更新壁纸…"],
+            ["Current Earth Wallpaper · Rust Native Preview", "Satellite source", "Wallpaper size", "Interface language", "Update interval (minutes)", "Show tray icon", "Time watermark", "Start updating", "Exit app", "Settings saved. Native image engine is being ported.", "Native image engine isn't ready yet. Keep using the stable build.", "Cannot hide tray: Ctrl+Alt+E is in use.", "Show window", "Image folder", "Start with Windows", "Stop updating", "Updating wallpaper..."],
+            ["リアルタイム地球壁紙 · Rust ネイティブ", "衛星ソース", "壁紙の大きさ", "表示言語", "更新間隔（分）", "トレイアイコンを表示", "時刻の透かし", "更新開始", "終了", "設定を保存しました。画像エンジンは移植中です。", "画像エンジンはまだ未完成です。", "トレイを隠せません。Ctrl+Alt+E は使用中です。", "ウィンドウを表示", "画像の保存先", "Windows起動時に自動更新", "更新停止", "壁紙を更新中…"],
+            ["실시간 지구 배경화면 · Rust 네이티브", "위성 소스", "배경화면 크기", "인터페이스 언어", "갱신 간격(분)", "트레이 아이콘 표시", "시간 워터마크", "업데이트 시작", "종료", "설정 저장됨. 이미지 엔진을 이식하는 중입니다.", "이미지 엔진이 아직 준비되지 않았습니다.", "트레이 숨기기 불가: Ctrl+Alt+E 사용 중.", "창 표시", "이미지 저장 폴더", "Windows 시작 시 자동 업데이트", "업데이트 중지", "배경화면 갱신 중…"],
         ];
-        DICT[lang.min(3)][key.min(12)]
+        DICT[lang.min(3)][key.min(16)]
     }
 
     struct Ui {
@@ -79,6 +81,9 @@ mod winapp {
         icon: usize,
         tray_added: bool,
         restore_hotkey: bool,
+        path_label:usize,
+        path_edit:usize,
+        autostart_check:usize,
         running:bool,
         busy:bool,
         failures:u32,
@@ -126,6 +131,9 @@ mod winapp {
                 control(hwnd, "STATIC", "", 24, 116, 185, 24, 0, 0),
                 control(hwnd, "STATIC", "", 24, 160, 185, 24, 0, 0),
             ];
+            let path_label=control(hwnd,"STATIC","",24,198,140,24,0,0);
+            let path_edit=control(hwnd,"EDIT",&cfg.save_path,164,195,276,27,
+                WS_BORDER|ES_AUTOHSCROLL as u32,ID_PATH);
             let combo_style = CBS_DROPDOWNLIST as u32 | WS_VSCROLL;
             let source = control(hwnd, "COMBOBOX", "", 210, 24, 230, 190, combo_style, ID_SOURCE);
             let scale = control(hwnd, "COMBOBOX", "", 210, 68, 230, 150, combo_style, ID_SCALE);
@@ -135,17 +143,20 @@ mod winapp {
             choose(source, &SOURCES, SOURCES.iter().position(|x| *x == cfg.image_source).unwrap_or(0));
             choose(scale, &SCALES, SCALES.iter().position(|x| *x == cfg.scale_mode).unwrap_or(2));
             choose(language, &LANGUAGES, cfg.language_index());
-            let tray_checkbox = control(hwnd, "BUTTON", "", 24, 207, 240, 26,
+            let tray_checkbox = control(hwnd, "BUTTON", "", 24, 238, 260, 26,
                 BS_AUTOCHECKBOX as u32, ID_TRAY_CHECK);
-            let watermark = control(hwnd, "BUTTON", "", 24, 243, 240, 26,
+            let watermark = control(hwnd, "BUTTON", "", 24, 273, 260, 26,
                 BS_AUTOCHECKBOX as u32, ID_WATERMARK);
+            let autostart_check=control(hwnd,"BUTTON","",24,308,280,26,
+                BS_AUTOCHECKBOX as u32,ID_AUTOSTART);
+            check(autostart_check,crate::autostart::enabled());
             check(tray_checkbox, cfg.show_tray_icon);
             check(watermark, cfg.watermark_on);
-            let start = control(hwnd, "BUTTON", "", 24, 290, 201, 35,
+            let start = control(hwnd, "BUTTON", "", 24, 348, 201, 35,
                 BS_PUSHBUTTON as u32, ID_START);
-            let exit = control(hwnd, "BUTTON", "", 245, 290, 195, 35,
+            let exit = control(hwnd, "BUTTON", "", 245, 348, 195, 35,
                 BS_PUSHBUTTON as u32, ID_EXIT);
-            let status = control(hwnd, "STATIC", "", 24, 341, 425, 55, 0, 0);
+            let status = control(hwnd, "STATIC", "", 24, 395, 425, 60, 0, 0);
             let icon = LoadIconW(null_mut(), IDI_APPLICATION);
             let mut ui = Self {
                 cfg, parent: hwnd as usize, labels: labels.map(|x| x as usize),
@@ -154,6 +165,8 @@ mod winapp {
                 watermark: watermark as usize, start: start as usize, exit: exit as usize,
                 status: status as usize, icon: icon as usize,
                 tray_added: false, restore_hotkey: hotkey,
+                path_label:path_label as usize,path_edit:path_edit as usize,
+                autostart_check:autostart_check as usize,
                 running:std::env::args().any(|a|a=="--autostart"),busy:false,failures:0,
                 next_due:Instant::now(),
             };
@@ -167,9 +180,11 @@ mod winapp {
             for (i, hwnd) in self.labels.iter().enumerate() {
                 set_text(h(*hwnd),lang_text(l,i+1));
             }
+            set_text(h(self.path_label),lang_text(l,13));
+            set_text(h(self.autostart_check),lang_text(l,14));
             set_text(h(self.tray_checkbox),lang_text(l,5));
             set_text(h(self.watermark),lang_text(l,6));
-            set_text(h(self.start),lang_text(l,7));
+            set_text(h(self.start),lang_text(l,if self.running{15}else{7}));
             set_text(h(self.exit),lang_text(l,8));
             set_text(h(self.status),lang_text(l,9));
         }
@@ -198,6 +213,18 @@ mod winapp {
             self.cfg.scale_mode = SCALES[selected(h(self.scale)).min(SCALES.len()-1)].into();
             self.cfg.language = LANGUAGES[selected(h(self.language)).min(LANGUAGES.len()-1)].into();
             self.cfg.watermark_on = checked(h(self.watermark));
+            let mut folder=[0u16;2048];
+            GetWindowTextW(h(self.path_edit),folder.as_mut_ptr(),folder.len() as i32);
+            self.cfg.save_path=String::from_utf16_lossy(&folder).trim_matches('\0').trim().to_string();
+            if self.cfg.save_path.is_empty(){
+                self.cfg.save_path=config::app_dir().join("wallpapers").to_string_lossy().into_owned();
+            }
+            let want_autostart=checked(h(self.autostart_check));
+            if want_autostart!=crate::autostart::enabled(){
+                if crate::autostart::set(want_autostart).is_err(){
+                    check(h(self.autostart_check),crate::autostart::enabled());
+                }
+            }
             let mut digits = [0u16; 32];
             GetWindowTextW(h(self.interval), digits.as_mut_ptr(), digits.len() as i32);
             let input = String::from_utf16_lossy(&digits).trim_matches('\0').trim().to_string();
@@ -219,7 +246,7 @@ mod winapp {
         unsafe fn spawn_job(&mut self) {
             if !self.running||self.busy { return; }
             self.busy=true;
-            set_text(h(self.status), "Downloading satellite image...");
+            set_text(h(self.status),lang_text(self.cfg.language_index(),16));
             let cfg=self.cfg.clone();
             let hwnd=self.parent;
             std::thread::spawn(move || {
@@ -288,12 +315,12 @@ mod winapp {
                             let mut ui=state.lock().unwrap();
                             ui.save_changes();
                             ui.running=!ui.running;
-                            set_text(h(ui.start), if ui.running{"Stop automatic updates"}else{"Start updating"});
+                            set_text(h(ui.start), lang_text(ui.cfg.language_index(),if ui.running{15}else{7}));
                             if ui.running{ui.next_due=Instant::now();ui.spawn_job();}
                             else{set_text(h(ui.status),"Automatic updates stopped.");}
                         }
                     },
-                    ID_SOURCE | ID_SCALE | ID_LANGUAGE | ID_INTERVAL | ID_TRAY_CHECK | ID_WATERMARK => {
+                    ID_SOURCE | ID_SCALE | ID_LANGUAGE | ID_INTERVAL | ID_PATH | ID_AUTOSTART | ID_TRAY_CHECK | ID_WATERMARK => {
                         if let Some(state) = UI.get() {
                             let mut state = state.lock().unwrap();
                             state.save_changes();
@@ -358,7 +385,7 @@ mod winapp {
             let hwnd = CreateWindowExW(
                 0, cls.as_ptr(), w("Current Earth Wallpaper").as_ptr(),
                 WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE,
-                CW_USEDEFAULT, CW_USEDEFAULT, 480, 450,
+                CW_USEDEFAULT, CW_USEDEFAULT, 480, 510,
                 null_mut(), null_mut(), h_instance, null(),
             );
             if hwnd.is_null() { return; }
