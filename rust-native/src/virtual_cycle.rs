@@ -46,6 +46,11 @@ pub fn pair_plan(cfg:&AppConfig,desktops:&[String],monitors:&[String])->Result<V
     let ids=plan(cfg,desktops)?;
     if monitors.is_empty(){return Err("No connected physical displays".into());}
     if monitors.len()>32{return Err("Too many physical displays".into());}
+    // Bound network work and disk growth even if Explorer's registry supplies
+    // an unexpectedly large number of desktop GUIDs.
+    if ids.len().saturating_mul(monitors.len())>128{
+        return Err("Too many desktop × monitor pairs (limit 128); refusing uncontrolled disk/network usage".into());
+    }
     let mut jobs=Vec::new();
     for desktop in ids {
         let mut seen=std::collections::HashSet::new();
@@ -112,6 +117,12 @@ mod tests{
         assert_eq!(picker_selection_index(&ids,Some("deleted"),Some("id-d")),Some(2));
         assert_eq!(picker_selection_index(&ids,None,None),Some(0));
         assert_eq!(picker_selection_index(&[],Some("id-c"),Some("id-d")),None);
+    }
+    #[test]fn excessive_combination_count_is_rejected(){
+        let cfg=AppConfig::default();
+        let ids=(0..65u32).map(|n|format!("{n:08x}-0000-0000-0000-000000000000")).collect::<Vec<_>>();
+        assert!(pair_plan(&cfg,&ids,&["A".into(),"B".into()]).is_err());
+        assert_eq!(pair_plan(&cfg,&ids[..64],&["A".into(),"B".into()]).unwrap().len(),128);
     }
     #[test]fn rejects_non_guids_and_empty(){
         let cfg=AppConfig::default();
