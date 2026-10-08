@@ -149,10 +149,13 @@ pub fn run_once_for_in_desktop(cfg:&AppConfig,display:Option<&Monitor>,desktop:O
     log(format!("Compose desktop BMP: {}x{}",w,h));
     wallpaper::compose(&path,w,h,&image,cfg.watermark_on)?;
     check(cancel)?;
-    // Protect other virtual desktops: never write if the user switched during decode.
+    // Background refresh can target inactive virtual desktops. Check that this
+    // GUID still exists, not that it is the foreground desktop.
     if let Some(id)=desktop {
-        let now=crate::virtual_desktop::snapshot()?.current;
-        if now.as_deref()!=Some(id) {return Err("Virtual desktop changed before wallpaper assignment".into());}
+        let snapshot=crate::virtual_desktop::snapshot()?;
+        if !snapshot.ids.iter().any(|known|known==id) {
+            return Err(format!("Desktop {id} was removed during refresh"));
+        }
     }
     check(cancel)?;
     if let Some(id)=desktop {
@@ -162,8 +165,8 @@ pub fn run_once_for_in_desktop(cfg:&AppConfig,display:Option<&Monitor>,desktop:O
         // The virtual desktop private COM setter needs a stable path. Cache before assignment.
         let stable=crate::virtual_cache::save(id,None,&cfg.image_source,&path)?;
         check(cancel)?;
-        if crate::virtual_desktop::snapshot()?.current.as_deref()!=Some(id){
-            return Err("Virtual desktop changed before private COM assignment".into());
+        if !crate::virtual_desktop::snapshot()?.ids.iter().any(|known|known==id){
+            return Err(format!("Desktop {id} no longer exists; skip COM assignment"));
         }
         log(format!("Windows: SetDesktopWallpaper(GUID={id}) via isolated COM helper"));
         crate::virtual_wallpaper::assign(id,&stable)?;

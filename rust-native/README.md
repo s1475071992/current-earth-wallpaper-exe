@@ -106,3 +106,27 @@ in the user's desktop session.
 When both "virtual desktop" and "different source per physical monitor" are enabled,
 this build explicitly blocks updates rather than silently writing another desktop's
 wallpaper. Full combined mode requires composing a spanned image and is still pending.
+
+
+## Scheduled updates for ALL Windows virtual desktops
+
+When virtual desktop mode is enabled, the timer's refresh cycle enumerates **every**
+virtual-desktop GUID in Explorer's read-only registry state. The worker processes
+desktops sequentially, using each desktop's own satellite selection and isolated
+`SetDesktopWallpaper` COM assignment, including desktops that are **not active**.
+
+Switching virtual desktops does **not** trigger a download, cancel a running download,
+restart the timer or set another desktop's wallpaper. A low-frequency (30-second)
+read-only foreground desktop check only updates diagnostic UI information.
+
+Fresh cached images are re-applied by GUID without a network request. On the next
+scheduled refresh, stale cached images are downloaded and replaced. Failures for
+one desktop are logged but do not stop the remaining desktops in the cycle. Changing
+a desktop's satellite selection takes effect at the next scheduled refresh.
+
+Enabling virtual desktop mode together with per-monitor independent-source mode is
+still rejected rather than silently overwriting the wrong screen: that combined
+feature requires per-desktop multi-display composition.
+
+**Windows 11 26H2 real-world verification is still required.** The private
+virtual-desktop COM wallpaper API is not guaranteed across Windows updates.

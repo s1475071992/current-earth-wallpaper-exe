@@ -13,6 +13,7 @@ mod sources;
 #[cfg(windows)] mod monitor;
 #[cfg(windows)] mod virtual_desktop;
 #[cfg(windows)] mod virtual_cache;
+mod virtual_cycle;
 #[cfg(windows)] mod virtual_wallpaper;
 
 #[cfg(not(windows))]
@@ -122,7 +123,6 @@ mod winapp {
         vdesks:Vec<String>,
         active_vdesk:Option<String>,
         vdesk_error_reported:bool,
-        vdesk_pending:bool,
         log_lines:VecDeque<String>,
         cancel:Arc<AtomicBool>,
         icon: usize,
@@ -271,7 +271,7 @@ mod winapp {
                 vdesk_source_label:vdesk_source_label as usize,vdesk_hint:vdesk_hint as usize,
                 vdesk_probe:vdesk_probe as usize,vdesk_candidate:None,vdesk_candidate_count:0,
                 vdesk_heartbeat:Instant::now(),
-                vdesks,active_vdesk,vdesk_error_reported:false,vdesk_pending:false,
+                vdesks,active_vdesk,vdesk_error_reported:false,
                 log_lines:VecDeque::new(),
                 cancel:Arc::new(AtomicBool::new(false)),
                 tray_added: false, restore_hotkey: hotkey,
@@ -351,7 +351,7 @@ mod winapp {
                 self.append_event(format!("虚拟桌面模式已{}；已识别 {} 个桌面；当前：{}",if self.cfg.virtual_desktops_enabled{"开启"}else{"关闭"},self.vdesks.len(),self.active_vdesk.as_deref().unwrap_or("未知")));
                 self.vdesk_candidate=None;
                 self.vdesk_candidate_count=0;
-                if self.cfg.virtual_desktops_enabled{self.vdesk_pending=true;self.next_due=Instant::now();}
+                self.append_event("虚拟桌面设置已保存；下一轮后台定时更新生效。".into());
             }
             let mut folder=[0u16;2048];
             GetWindowTextW(h(self.path_edit),folder.as_mut_ptr(),folder.len() as i32);
@@ -418,11 +418,7 @@ mod winapp {
                 self.append_event(format!("虚拟桌面 {} 的默认卫星：{}",id,source));
                 self.sync_monitor_source();
                 let _=config::save(&self.cfg);
-                if self.cfg.virtual_desktops_enabled && self.active_vdesk.as_deref()==Some(&id){
-                    self.cancel.store(true,Ordering::Relaxed);
-                    self.next_due=Instant::now();
-                    self.vdesk_pending=true;
-                }
+                self.append_event("该桌面的卫星源将在下一轮定时更新时应用。".into());
             }
         }
         unsafe fn sync_virtual_source(&mut self){
@@ -468,67 +464,34 @@ mod winapp {
         }
         unsafe fn poll_virtual_desktops(&mut self){
             if !self.cfg.virtual_desktops_enabled{return;}
+            self.vdesk_heartbeat=Instant::now();
             match crate::virtual_desktop::snapshot(){
                 Ok(snap)=>{
-                    if self.vdesks!=snap.ids {
+                    if self.vdesks!=snap.ids{
                         self.vdesks=snap.ids;
                         SendMessageW(h(self.vdesk_picker),CB_RESETCONTENT,0,0);
                         for (i,_) in self.vdesks.iter().enumerate(){
-                            SendMessageW(h(self.vdesk_picker),CB_ADDSTRING,0,w(&format!("Desktop {}",i+1)).as_ptr() as LPARAM);
+                            SendMessageW(h(self.vdesk_picker),CB_ADDSTRING,0,
+                                w(&format!("Desktop {}",i+1)).as_ptr() as LPARAM);
                         }
-                        self.append_event(format!("已刷新虚拟桌面列表：{} 个",self.vdesks.len()));
+                        self.append_event(format!("虚拟桌面列表已更新：{} 个（下次定时周期自动覆盖全部）。",self.vdesks.len()));
                     }
-                    if snap.current!=self.active_vdesk{
-                        if snap.current.is_none(){
-                            self.vdesk_candidate=None;
-                            self.vdesk_candidate_count=0;
-                            self.active_vdesk=None;
-                            self.cancel.store(true,Ordering::Relaxed);
-                            if !self.vdesk_error_reported{
-                                self.append_event("无法确认当前桌面 ID，暂停自动更新；请点击“检测虚拟桌面”检查。".into());
-                                self.vdesk_error_reported=true;
-                            }
-                        }else{
-                            if self.vdesk_candidate==snap.current{
-                                self.vdesk_candidate_count=self.vdesk_candidate_count.saturating_add(1);
-                            }else{
-                                self.vdesk_candidate=snap.current.clone();
-                                self.vdesk_candidate_count=1;
-                            }
-                            if self.vdesk_candidate_count>=2{
-                                self.active_vdesk=snap.current;
-                                self.vdesk_candidate=None;
-                                self.vdesk_candidate_count=0;
-                                if let Some(id)=self.active_vdesk.clone(){
-                                    self.append_event(format!("已确认切换到虚拟桌面：{id}（检测方式：{}）",snap.source));
-                                    if let Some(index)=self.vdesks.iter().position(|v|v==&id){
-                                        SendMessageW(h(self.vdesk_picker),CB_SETCURSEL,index,0);
-                                        self.sync_virtual_source();
-                                    }
-                                    self.cancel.store(true,Ordering::Relaxed);
-                                    self.next_due=Instant::now();
-                                    self.vdesk_pending=true;
-                                }
+                    if self.active_vdesk!=snap.current{
+                        self.active_vdesk=snap.current;
+                        self.append_event(format!("当前前台桌面：{}；仅更新界面状态，不触发壁纸刷新。",
+                            self.active_vdesk.as_deref().unwrap_or("未知")));
+                        if let Some(id)=self.active_vdesk.as_ref(){
+                            if let Some(index)=self.vdesks.iter().position(|v|v==id){
+                                SendMessageW(h(self.vdesk_picker),CB_SETCURSEL,index,0);
+                                self.sync_virtual_source();
                             }
                         }
-                    }else{
-                        self.vdesk_candidate=None;
-                        self.vdesk_candidate_count=0;
                     }
                     self.vdesk_error_reported=false;
-                    if self.vdesk_heartbeat.elapsed()>=Duration::from_secs(30){
-                        self.append_event(format!("虚拟桌面监测运行中：当前={} / 总数={} / 更新={}",
-                            self.active_vdesk.as_deref().unwrap_or("未知"),self.vdesks.len(),self.running));
-                        self.vdesk_heartbeat=Instant::now();
-                    }
                 }
                 Err(e)=>{
-                    self.active_vdesk=None;
-                    self.vdesk_candidate=None;
-                    self.vdesk_candidate_count=0;
-                    self.cancel.store(true,Ordering::Relaxed);
                     if !self.vdesk_error_reported{
-                        self.append_event(format!("虚拟桌面检测失败：{e}；壁纸更新已暂停。"));
+                        self.append_event(format!("桌面状态诊断：{e}；后台周期仍会重新检查所有桌面。"));
                         self.vdesk_error_reported=true;
                     }
                 }
@@ -547,11 +510,7 @@ mod winapp {
                     self.cfg.monitor_sources.insert(monitor.id.clone(),source.to_string());
                 }
                 self.append_event(format!("显示器 {}（{}×{}）：{}",index+1,monitor.width,monitor.height,source));
-                if self.cfg.virtual_desktops_enabled && self.selected_vdesk()==self.active_vdesk {
-                    self.cancel.store(true,Ordering::Relaxed);
-                    self.vdesk_pending=true;
-                    self.next_due=Instant::now();
-                }
+                self.append_event("配置已保存；切换桌面不会立即下载。".into());
                 let _=config::save(&self.cfg);
             }
         }
@@ -572,81 +531,91 @@ mod winapp {
                 SendMessageW(h(self.monitor_source),CB_SETCURSEL,pos,0);
             }
         }
-        unsafe fn spawn_job(&mut self) {
-            if !self.running||self.busy { return; }
-            if self.cfg.virtual_desktops_enabled && self.active_vdesk.is_none(){
-                self.next_due=Instant::now()+Duration::from_secs(30);
+        unsafe fn spawn_job(&mut self){
+            if !self.running || self.busy{return;}
+            if self.cfg.virtual_desktops_enabled && self.cfg.per_monitor_enabled {
+                self.append_event("虚拟桌面与多物理显示器双模式目前不能同时启用，安全跳过本轮。".into());
+                self.next_due=Instant::now()+Duration::from_secs(60);
                 return;
             }
             self.busy=true;
-            // A pending switch is consumed by this job; only another switch may schedule a follow-up.
-            self.vdesk_pending=false;
             self.cancel=Arc::new(AtomicBool::new(false));
-            let source=self.active_vdesk.as_deref().and_then(|id|self.cfg.virtual_desktop_sources.get(id))
-                .unwrap_or(&self.cfg.image_source).clone();
-            self.append_event(format!("开始更新：{} / 虚拟桌面 {}",source,self.active_vdesk.as_deref().unwrap_or("未启用")));
+            if self.cfg.virtual_desktops_enabled{
+                self.append_event("后台定时周期开始：依次处理全部虚拟桌面，不受桌面切换影响。".into());
+            } else {
+                self.append_event(format!("开始更新默认卫星：{}",self.cfg.image_source));
+            }
             set_text(h(self.status),lang_text(self.cfg.language_index(),16));
             let cfg=self.cfg.clone();
-            let desktop_id=if cfg.virtual_desktops_enabled{self.active_vdesk.clone()}else{None};
             let cancel=self.cancel.clone();
             let hwnd=self.parent;
-            std::thread::spawn(move || {
-                let outcome=std::panic::catch_unwind(|| -> Result<std::path::PathBuf,String> {
+            std::thread::spawn(move||{
+                let outcome=std::panic::catch_unwind(||->Result<std::path::PathBuf,String>{
                     let mut report=|line:String|{
                         let ptr=Box::into_raw(Box::new(line));
-                        if PostMessageW(h(hwnd),REFRESH_PROGRESS,0,ptr as isize)==0 {
+                        if PostMessageW(h(hwnd),REFRESH_PROGRESS,0,ptr as isize)==0{
                             drop(Box::from_raw(ptr));
                         }
                     };
-                    if cfg.per_monitor_enabled {
-                        if desktop_id.is_some(){
-                            return Err("多显示器独立图源 + 虚拟桌面模式尚需跨屏图像合成，已安全阻止覆盖其他桌面。".into());
+                    if cfg.virtual_desktops_enabled{
+                        // Do not depend on CurrentVirtualDesktop. Snapshot the GUID list
+                        // and target every virtual desktop, including inactive ones.
+                        let ids=crate::virtual_desktop::snapshot()?.ids;
+                        let plan=crate::virtual_cycle::plan(&cfg,&ids)?;
+                        report(format!("本轮后台定时更新共 {} 个虚拟桌面。",plan.len()));
+                        let mut completed=0usize;
+                        let mut last=std::path::PathBuf::new();
+                        let mut failures=Vec::new();
+                        for (index,work) in plan.iter().enumerate(){
+                            if cancel.load(Ordering::Relaxed){return Err("Cancelled".into());}
+                            report(format!("正在处理虚拟桌面 {}/{}：{} / 卫星 {}",
+                                index+1,plan.len(),work.id,work.source));
+                            let mut one=cfg.clone();
+                            one.image_source=work.source.clone();
+                            let action=if crate::virtual_cache::recent(&work.id,None,&work.source,cfg.interval_minutes).is_some(){
+                                match crate::virtual_cache::restore(&work.id,None,&work.source,&cancel){
+                                    Ok(path)=>{
+                                        report(format!("桌面 {} 已通过 COM 恢复新鲜缓存，无需下载。",index+1));
+                                        Ok(path)
+                                    },
+                                    Err(e)=>{
+                                        report(format!("桌面 {} 缓存恢复失败：{e}；重新获取图像。",index+1));
+                                        crate::engine::run_once_in_desktop(&one,Some(&work.id),&cancel,&mut report)
+                                    }
+                                }
+                            }else{
+                                crate::engine::run_once_in_desktop(&one,Some(&work.id),&cancel,&mut report)
+                            };
+                            match action{
+                                Ok(path)=>{completed+=1;last=path;report(format!("桌面 {} 更新成功。",index+1));},
+                                Err(e)=>{
+                                    if cancel.load(Ordering::Relaxed){return Err("Cancelled".into());}
+                                    report(format!("桌面 {} 更新失败：{e}；继续其他桌面。",index+1));
+                                    failures.push(format!("桌面 {}: {e}",index+1));
+                                }
+                            }
                         }
+                        if failures.is_empty(){
+                            report(format!("本轮后台更新完成：{completed}/{} 个桌面。",plan.len()));
+                            Ok(last)
+                        }else{
+                            Err(format!("本轮完成 {completed}/{} 个桌面；失败：{}",plan.len(),failures.join("; ")))
+                        }
+                    }else if cfg.per_monitor_enabled{
                         let monitors=crate::monitor::connected()?;
                         if monitors.is_empty(){return Err("No connected displays available".into());}
                         let mut last=std::path::PathBuf::new();
                         for (i,m) in monitors.iter().enumerate(){
                             if cancel.load(Ordering::Relaxed){return Err("Cancelled".into());}
-                            let mut selected_cfg=cfg.clone();
-                            selected_cfg.image_source=desktop_id.as_deref()
-                                .and_then(|id|cfg.virtual_monitor_sources.get(id))
-                                .and_then(|entries|entries.get(&m.id))
-                                .or_else(||desktop_id.as_deref().and_then(|id|cfg.virtual_desktop_sources.get(id)))
-                                .or_else(||cfg.monitor_sources.get(&m.id))
+                            let mut one=cfg.clone();
+                            one.image_source=cfg.monitor_sources.get(&m.id)
                                 .cloned().unwrap_or_else(||cfg.image_source.clone());
-                            report(format!("Display {} [{}x{}]: {}",i+1,m.width,m.height,selected_cfg.image_source));
-                            if let Some(id)=desktop_id.as_deref(){
-                                if let Err(e)=crate::virtual_cache::restore(id,Some(m),&selected_cfg.image_source,&cancel){
-                                    report(format!("Cache restore unavailable: {e}"));
-                                }else{report(format!("Restored cached wallpaper for display {}",i+1));}
-                            }
-                            if cancel.load(Ordering::Relaxed){return Err("Cancelled".into());}
-                            last=crate::engine::run_once_for_in_desktop(&selected_cfg,Some(m),desktop_id.as_deref(),&cancel,&mut report)?;
-                            if let Some(id)=desktop_id.as_deref(){
-                                if let Err(e)=crate::virtual_cache::save(id,Some(m),&selected_cfg.image_source,&last){
-                                    report(format!("Cache save warning: {e}"));
-                                }
-                            }
+                            report(format!("物理显示器 {} [{}x{}]: {}",i+1,m.width,m.height,one.image_source));
+                            last=crate::engine::run_once_for(&one,Some(m),&cancel,&mut report)?;
                         }
                         Ok(last)
-                    } else {
-                        let mut selected_cfg=cfg.clone();
-                        if let Some(id)=desktop_id.as_deref(){
-                            selected_cfg.image_source=cfg.virtual_desktop_sources.get(id).cloned()
-                                .unwrap_or_else(||cfg.image_source.clone());
-                            match crate::virtual_cache::restore(id,None,&selected_cfg.image_source,&cancel){
-                                Ok(path)=>{
-                                    report(format!("Restored per-virtual-desktop COM wallpaper for {id}"));
-                                    if crate::virtual_cache::recent(id,None,&selected_cfg.image_source,cfg.interval_minutes).is_some(){
-                                        report(format!("Cached image is younger than {} minutes; no download needed",cfg.interval_minutes));
-                                        return Ok(path);
-                                    }
-                                }
-                                Err(e)=>report(format!("No compatible wallpaper cache ({e}); download required"))
-                            }
-                        }
-                        if cancel.load(Ordering::Relaxed){return Err("Cancelled".into());}
-                        crate::engine::run_once_in_desktop(&selected_cfg,desktop_id.as_deref(),&cancel,&mut report)
+                    }else{
+                        crate::engine::run_once(&cfg,&cancel,&mut report)
                     }
                 });
                 let result=outcome.unwrap_or_else(|_|Err("Worker unexpectedly panicked".into()));
@@ -656,7 +625,7 @@ mod winapp {
                     Err(e)=>format!("Wallpaper update failed: {e}"),
                 });
                 let ptr=Box::into_raw(report);
-                if PostMessageW(h(hwnd),REFRESH_DONE,success as usize,ptr as isize)==0 {
+                if PostMessageW(h(hwnd),REFRESH_DONE,success as usize,ptr as isize)==0{
                     drop(Box::from_raw(ptr));
                 }
             });
@@ -666,10 +635,7 @@ mod winapp {
             let cancelled=notice.contains("Cancelled")||notice.contains("cancelled");
             if success{self.failures=0;}else if !cancelled{self.failures=self.failures.saturating_add(1);}
             let seconds=if !success&&self.failures<=3{60}else{self.cfg.interval_minutes as u64*60};
-            self.next_due=if self.vdesk_pending && self.running {
-                self.vdesk_pending=false;
-                Instant::now()
-            } else {Instant::now()+Duration::from_secs(seconds)};
+            self.next_due=Instant::now()+Duration::from_secs(seconds);
             self.append_event(if success{format!("成功：{notice}")}else{format!("失败：{notice}")});
             if self.running{
                 self.append_event(format!("下次自动更新：约 {} 分钟后（失败时可能提前重试）",seconds/60));
@@ -777,7 +743,11 @@ mod winapp {
             WM_TIMER if wp==TIMER_ID => {
                 if let Some(state)=UI.get(){
                     let mut ui=state.lock().unwrap();
-                    ui.poll_virtual_desktops();
+                    // Desktop switching does not schedule or cancel refreshes.
+                    if ui.running && ui.cfg.virtual_desktops_enabled &&
+                        ui.vdesk_heartbeat.elapsed()>=Duration::from_secs(30){
+                        ui.poll_virtual_desktops();
+                    }
                     if ui.running&&!ui.busy&&Instant::now()>=ui.next_due{ui.spawn_job();}
                 }
                 0

@@ -33,8 +33,11 @@ pub fn recent(id:&str,monitor:Option<&Monitor>,source:&str,minutes:u32)->Option<
 }
 fn guard(id:&str,cancel:&AtomicBool)->Result<(),String>{
     if cancel.load(Ordering::Relaxed){return Err("Desktop change cancelled".into())}
-    let current=virtual_desktop::snapshot()?.current;
-    if current.as_deref()!=Some(id){return Err("Active virtual desktop has changed".into())}
+    // Cached wallpaper may be assigned to an inactive desktop without switching.
+    let ids=virtual_desktop::snapshot()?.ids;
+    if !ids.iter().any(|known|known==id) {
+        return Err("Virtual desktop no longer exists".into());
+    }
     Ok(())
 }
 pub fn restore(id:&str,monitor:Option<&Monitor>,source:&str,cancel:&AtomicBool)->Result<PathBuf,String>{
