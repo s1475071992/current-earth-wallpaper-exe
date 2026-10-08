@@ -46,8 +46,9 @@ pub fn check(id:&str,cancel:&AtomicBool)->Result<(),String>{
 }
 pub fn restore(folder:&Path,id:&str,monitor:Option<&Monitor>,source:&str,cancel:&AtomicBool)->Result<PathBuf,String>{
     check(id,cancel)?;
-    if monitor.is_some(){return Err("Combined desktop+per-monitor mode is not yet available".into());}
-    let bmp=target(folder,Some(id),None);
+    // In the virtual-desktop-only mode a single physical display may have an
+    // explicit fixed BMP path. The private COM method still targets the desktop.
+    let bmp=target(folder,Some(id),monitor);
     if !bmp.is_file() || !meta_valid(&bmp,source){return Err("No matching saved wallpaper".into())}
     virtual_wallpaper::assign(id,&bmp)?;
     Ok(bmp)
