@@ -279,7 +279,7 @@ mod winapp {
                 last_maintenance:Instant::now(),
             };
             ui.localize();
-            ui.sync_virtual_source();
+            ui.sync_pair_source();
             ui.update_tray();
             ui.append_event("Current Earth Wallpaper v1.1 beta · 双模式测试版".into());
             ui.append_event("应用已启动；右上角 × 可以选择后台运行或彻底退出。".into());
@@ -411,23 +411,64 @@ mod winapp {
         unsafe fn selected_vdesk(&self)->Option<String>{
             self.vdesks.get(selected(h(self.vdesk_picker))).cloned()
         }
-        unsafe fn set_virtual_source(&mut self){
-            if let Some(id)=self.selected_vdesk(){
-                let source=SOURCES[selected(h(self.vdesk_source)).min(SOURCES.len()-1)];
-                if self.cfg.virtual_desktop_sources.get(&id).is_some_and(|old|old==source) {return;}
-                self.cfg.virtual_desktop_sources.insert(id.clone(),source.into());
-                self.append_event(format!("虚拟桌面 {} 的默认卫星：{}",id,source));
-                self.sync_monitor_source();
-                let _=config::save(&self.cfg);
-                self.append_event("该桌面的卫星源将在下一轮定时更新时应用。".into());
+        unsafe fn set_pair_source(&mut self){
+            let Some(id)=self.selected_vdesk() else{
+                self.append_event("没有检测到虚拟桌面，请先点击“检测虚拟桌面”。".into());
+                return;
+            };
+            let index=selected(h(self.monitor_picker));
+            let Some(monitor)=self.monitors.get(index) else{
+                self.append_event("没有检测到显示器，请先点击“检测显示器”。".into());
+                return;
+            };
+            let source=SOURCES[selected(h(self.vdesk_source)).min(SOURCES.len()-1)];
+            if crate::virtual_cycle::source_for_pair(&self.cfg,&id,&monitor.id)==source{return;}
+            let monitor_id=monitor.id.clone();
+            self.cfg.virtual_monitor_sources.entry(id.clone()).or_default()
+                .insert(monitor_id,source.to_string());
+            self.append_event(format!("图源已保存：桌面 {} / 显示器 {} / {}（下次后台更新生效）",
+                id,index+1,source));
+            if let Err(e)=config::save(&self.cfg){
+                self.append_event(format!("配置保存失败：{e}"));
             }
         }
-        unsafe fn sync_virtual_source(&mut self){
-            if let Some(id)=self.selected_vdesk(){
-                let source=self.cfg.virtual_desktop_sources.get(&id).unwrap_or(&self.cfg.image_source);
-                let position=SOURCES.iter().position(|x|*x==source).unwrap_or(0);
-                SendMessageW(h(self.vdesk_source),CB_SETCURSEL,position,0);
-                self.sync_monitor_source();
+        unsafe fn sync_pair_source(&mut self){
+            let desktop=self.selected_vdesk();
+            let monitor=self.monitors.get(selected(h(self.monitor_picker)));
+            let source=match (desktop.as_deref(),monitor){
+                (Some(id),Some(m))=>crate::virtual_cycle::source_for_pair(&self.cfg,id,&m.id),
+                _=>self.cfg.image_source.as_str(),
+            };
+            let position=SOURCES.iter().position(|x|*x==source).unwrap_or(0);
+            SendMessageW(h(self.vdesk_source),CB_SETCURSEL,position,0);
+        }
+        unsafe fn detect_monitors(&mut self){
+            match crate::monitor::connected(){
+                Ok(displays)=>{
+                    let chosen=self.monitors.get(selected(h(self.monitor_picker))).map(|m|m.id.clone());
+                    self.monitors=displays;
+                    SendMessageW(h(self.monitor_picker),CB_RESETCONTENT,0,0);
+                    for (i,m) in self.monitors.iter().enumerate(){
+                        SendMessageW(h(self.monitor_picker),CB_ADDSTRING,0,
+                            w(&format!("{} — {}×{}",i+1,m.width,m.height)).as_ptr() as LPARAM);
+                    }
+                    if !self.monitors.is_empty(){
+                        let index=chosen.as_deref()
+                            .and_then(|id|self.monitors.iter().position(|m|m.id==id))
+                            .unwrap_or(0);
+                        SendMessageW(h(self.monitor_picker),CB_SETCURSEL,index,0);
+                    }
+                    self.sync_pair_source();
+                    self.append_event(format!("显示器检测完成：发现 {} 台已连接的物理显示器。",self.monitors.len()));
+                    let descriptions=self.monitors.iter().enumerate()
+                        .map(|(i,m)|format!("显示器 {}：{}×{}，设备 ID：{}",
+                            i+1,m.width,m.height,m.id)).collect::<Vec<_>>();
+                    for line in descriptions{self.append_event(line);}
+                    if self.monitors.is_empty(){
+                        self.append_event("未发现可用显示器，请检查 Windows 显示设置后重试。".into());
+                    }
+                },
+                Err(e)=>self.append_event(format!("检测显示器失败：{e}")),
             }
         }
         unsafe fn report_virtual_desktops(&mut self){
@@ -524,7 +565,7 @@ mod winapp {
                             if let Some(id)=self.active_vdesk.as_ref(){
                                 if let Some(index)=self.vdesks.iter().position(|v|v==id){
                                     SendMessageW(h(self.vdesk_picker),CB_SETCURSEL,index,0);
-                                    self.sync_virtual_source();
+                                    self.sync_pair_source();
                                 }
                                 if combined{self.schedule_offline_apply();}
                             }else if combined{crate::display_apply::invalidate();}
@@ -541,40 +582,6 @@ mod winapp {
                         self.vdesk_error_reported=true;
                     }
                 }
-            }
-        }
-        unsafe fn save_monitor_source(&mut self){
-            let index=selected(h(self.monitor_picker));
-            if let Some(monitor)=self.monitors.get(index){
-                let source=SOURCES[selected(h(self.monitor_source)).min(SOURCES.len()-1)];
-                if self.cfg.virtual_desktops_enabled {
-                    if let Some(id)=self.selected_vdesk(){
-                        self.cfg.virtual_monitor_sources.entry(id).or_default()
-                            .insert(monitor.id.clone(),source.to_string());
-                    }
-                }else{
-                    self.cfg.monitor_sources.insert(monitor.id.clone(),source.to_string());
-                }
-                self.append_event(format!("显示器 {}（{}×{}）：{}",index+1,monitor.width,monitor.height,source));
-                self.append_event("配置已保存；切换桌面不会立即下载。".into());
-                let _=config::save(&self.cfg);
-            }
-        }
-        unsafe fn sync_monitor_source(&mut self){
-            let index=selected(h(self.monitor_picker));
-            if let Some(monitor)=self.monitors.get(index){
-                let id=self.selected_vdesk();
-                let src=if self.cfg.virtual_desktops_enabled {
-                    id.as_ref().and_then(|v|self.cfg.virtual_monitor_sources.get(v))
-                        .and_then(|map|map.get(&monitor.id))
-                        .or_else(||id.as_ref().and_then(|v|self.cfg.virtual_desktop_sources.get(v)))
-                        .or_else(||self.cfg.monitor_sources.get(&monitor.id))
-                        .unwrap_or(&self.cfg.image_source)
-                }else{
-                    self.cfg.monitor_sources.get(&monitor.id).unwrap_or(&self.cfg.image_source)
-                };
-                let pos=SOURCES.iter().position(|x|*x==src.as_str()).unwrap_or(0);
-                SendMessageW(h(self.monitor_source),CB_SETCURSEL,pos,0);
             }
         }
         unsafe fn spawn_job(&mut self){
@@ -813,17 +820,17 @@ mod winapp {
                     ID_VDESK_PROBE=>{
                         if let Some(state)=UI.get(){state.lock().unwrap().report_virtual_desktops();}
                     },
+                    ID_MONITOR_PROBE=>{
+                        if let Some(state)=UI.get(){state.lock().unwrap().detect_monitors();}
+                    },
                     ID_VDESK_PICKER if notification==1=>{
-                        if let Some(state)=UI.get(){state.lock().unwrap().sync_virtual_source();}
+                        if let Some(state)=UI.get(){state.lock().unwrap().sync_pair_source();}
                     },
                     ID_VDESK_SOURCE if notification==1=>{
-                        if let Some(state)=UI.get(){state.lock().unwrap().set_virtual_source();}
+                        if let Some(state)=UI.get(){state.lock().unwrap().set_pair_source();}
                     },
                     ID_MONITOR_PICKER if notification==1=>{
-                        if let Some(state)=UI.get(){state.lock().unwrap().sync_monitor_source();}
-                    },
-                    ID_MONITOR_SOURCE if notification==1=>{
-                        if let Some(state)=UI.get(){state.lock().unwrap().save_monitor_source();}
+                        if let Some(state)=UI.get(){state.lock().unwrap().sync_pair_source();}
                     },
                     ID_CLEAR_LOG=>{
                         if let Some(state)=UI.get(){let mut ui=state.lock().unwrap();ui.log_lines.clear();set_text(h(ui.log_area),"");}
@@ -855,11 +862,11 @@ mod winapp {
                             }
                         }
                     },
-                    ID_SOURCE | ID_SCALE | ID_LANGUAGE | ID_INTERVAL | ID_PATH | ID_AUTOSTART | ID_TRAY_CHECK | ID_WATERMARK | ID_FILE_LOG | ID_MULTI_MONITOR | ID_VDESK_ENABLED => {
+                    ID_SOURCE | ID_SCALE | ID_LANGUAGE | ID_INTERVAL | ID_PATH | ID_AUTOSTART | ID_TRAY_CHECK | ID_WATERMARK | ID_FILE_LOG | ID_MULTI_MONITOR => {
                         if let Some(state) = UI.get() {
                             let mut state = state.lock().unwrap();
                             state.save_changes();
-                            state.sync_monitor_source();
+                            state.sync_pair_source();
                             state.poll_virtual_desktops();
                         }
                     },
