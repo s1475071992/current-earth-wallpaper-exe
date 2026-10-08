@@ -1098,6 +1098,31 @@ fn live_goes_probe(){
 }
 
 #[cfg(windows)]
+fn live_fy4b_https_probe(){
+    let url=sources::ALL[0].home_url;
+    let tmp=std::env::temp_dir().join(format!("cew-https-fy4b-{}.jpg",std::process::id()));
+    let start=std::time::Instant::now();
+    let result=http::download(url,&tmp,70*1048576).and_then(|_|{
+        let img=imaging::load_scaled(&tmp,350,None)?;
+        Ok(format!("WIC decoded {}x{}",img.width,img.height))
+    });
+    let _=std::fs::remove_file(tmp);
+    let report=serde_json::json!({
+        "source":"FY4B","url":url,"tls_required":true,"ok":result.is_ok(),
+        "result":result.as_ref().map(String::as_str).unwrap_or("download or decode failed"),
+        "error":result.as_ref().err(),
+        "seconds":start.elapsed().as_secs_f32(),
+    });
+    if let Ok(exe)=std::env::current_exe(){
+        if let Some(parent)=exe.parent(){
+            let _=std::fs::write(parent.join("fy4b-https.json"),
+                serde_json::to_vec_pretty(&report).unwrap());
+        }
+    }
+    if result.is_err(){std::process::exit(2);}
+}
+
+#[cfg(windows)]
 fn virtual_desktop_probe(){
     let report=crate::virtual_desktop::diagnostic_report();
     /* prior report builder removed below */
@@ -1141,6 +1166,7 @@ fn main() {
     }
     if std::env::args().any(|arg|arg=="--virtual-desktop-probe") {virtual_desktop_probe();return;}
     if std::env::args().any(|arg|arg=="--self-test-goes") {live_goes_probe();return;}
+    if std::env::args().any(|arg|arg=="--self-test-fy4b-https") {live_fy4b_https_probe();return;}
     if std::env::args().any(|arg|arg=="--self-test-render"){
         let p=std::env::temp_dir().join(format!("cew_test_{}.bmp",std::process::id()));
         let out=std::env::temp_dir().join(format!("cew_render_{}.bmp",std::process::id()));
