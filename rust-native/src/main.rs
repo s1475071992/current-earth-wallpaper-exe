@@ -654,7 +654,15 @@ mod winapp {
                                         Ok(true)=>report(format!("已提交壁纸：目标桌面 {} / 显示器 {}（单屏为原生虚拟桌面绑定）。",
                                             pair.desktop_id,pair.monitor_id)),
                                         Ok(false)=>{},
-                                        Err(e)=>report(format!("组合图已保存，但显示器应用失败：{e}")),
+                                        Err(e)=>{
+                                            report(format!("组合图片已保存，但桌面/显示器壁纸设置失败：{e}"));
+                                            if e.contains("VIRTUAL_DESKTOP_UNSUPPORTED"){
+                                                // An incompatible private COM helper cannot
+                                                // be repaired by trying every other desktop.
+                                                return Err(e);
+                                            }
+                                            failed.push(format!("组合{}壁纸设置失败: {e}",i+1));
+                                        },
                                     }
                                 },
                                 Err(e)=>{
@@ -927,6 +935,13 @@ mod winapp {
                         ui.display_change_due=None;
                         ui.detect_monitors();
                         ui.schedule_offline_apply();
+                        // Re-check cached BMP geometry under the new topology.
+                        // A resolution/orientation change can require re-rendering,
+                        // but ordinary desktop switches NEVER cause downloads.
+                        if ui.running && !ui.wake.sleeping(){
+                            ui.next_due=Instant::now()+Duration::from_secs(3);
+                            ui.append_event("显示器配置已变化：3秒后验证各壁纸尺寸，必要时后台重新生成，不在桌面切换时下载。".into());
+                        }
                     }
                     // Desktop switching does not schedule or cancel refreshes.
                     if ui.running && ui.cfg.virtual_desktops_enabled &&
