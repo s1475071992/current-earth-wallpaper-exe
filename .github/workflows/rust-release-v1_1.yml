@@ -104,8 +104,8 @@ jobs:
 
       - name: Publish unsigned v1.1.0 EXE + source GitHub Release
         env:
-          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: \${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           test -f release-dist/CurrentEarthWallpaperNative-v1.1.0-windows-x64.exe
           test -f release-dist/CurrentEarthWallpaper-v1.1.0-source.zip
