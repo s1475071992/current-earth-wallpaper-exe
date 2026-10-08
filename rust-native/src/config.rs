@@ -16,6 +16,7 @@ pub struct AppConfig {
     pub interval_minutes: u32,
     pub watermark_on: bool,
     pub show_tray_icon: bool,
+    pub log_to_file: bool,
     pub language: String,
 }
 
@@ -28,6 +29,7 @@ impl Default for AppConfig {
             interval_minutes: 30,
             watermark_on: false,
             show_tray_icon: true,
+            log_to_file: true,
             language: LANGUAGES[0].into(),
         }
     }
@@ -94,6 +96,17 @@ mod tests {
         assert_eq!(config.image_source, "NASA EPIC");
         assert!(!config.show_tray_icon);
         assert_eq!(config.language_index(), 2);
+    }
+    #[test]
+    fn file_logging_backward_compatibility_and_persistence() {
+        let old = r#"{"image_source":"GOES-East","show_tray_icon":false}"#;
+        let config:AppConfig=serde_json::from_str(old).unwrap();
+        assert!(config.log_to_file, "previous settings must continue logging by default");
+        let mut disabled = config.clone();
+        disabled.log_to_file = false;
+        let json=serde_json::to_string(&disabled).unwrap();
+        let restored:AppConfig=serde_json::from_str(&json).unwrap();
+        assert!(!restored.log_to_file, "off choice must persist across restarts");
     }
     #[test]
     fn bad_values_do_not_crash() {

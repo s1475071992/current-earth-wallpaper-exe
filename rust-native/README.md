@@ -27,3 +27,7 @@ GitHub Actions uses Windows 2022 with automated Rust unit tests, native offline 
 - NASA EPIC and WMS images may update more slowly than weather satellites.
 - NICT visualizations are not licensed for commercial use.
 - This branch is under active testing; do not overwrite the Python version until tested on your own Windows desktop.
+
+## 日志写入开关 / File log setting
+
+The **Save logs to file** checkbox is stored in the JSON configuration as `log_to_file` (defaults to `true` for backward compatibility). When disabled, the scrolling in-memory execution log remains visible, but no new file writes or log rotation take place. Existing log files are left untouched. The setting persists after restart, and all four UI languages have a translation.
