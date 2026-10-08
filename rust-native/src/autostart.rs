@@ -1,5 +1,4 @@
 //! Per-user Run key; the value invokes this EXE with --autostart.
-use std::{ffi::OsStr,os::windows::ffi::OsStrExt};
 use windows_sys::Win32::System::Registry::*;
 fn w(s:&str)->Vec<u16>{s.encode_utf16().chain(Some(0)).collect()}
 const SUBKEY:&str="Software\\Microsoft\\Windows\\CurrentVersion\\Run";
@@ -22,7 +21,7 @@ pub fn set(enabled:bool)->Result<(),String>{
         let name=w(VALUE);
         let rc=if enabled{
             let exe=std::env::current_exe().map_err(|e|e.to_string())?;
-            let value=w(&format!("\\\"{}\\\" --autostart",exe.display()));
+            let value=w(&format!("\"{}\" --autostart",exe.display()));
             RegSetValueExW(key,name.as_ptr(),0,REG_SZ,
                 value.as_ptr() as *const u8,(value.len()*2) as u32)
         }else{
