@@ -14,7 +14,7 @@ pub struct Source {
 }
 
 pub const ALL: [Source; 6] = [
-    Source { name: "风云4B", home_url: "http://img.nsmc.org.cn/CLOUDIMAGE/FY4B/AGRI/GCLR/FY4B_DISK_GCLR.JPG", kind: SourceKind::Direct, crop: Some((65, 80, 10835)) },
+    Source { name: "风云4B", home_url: "https://img.nsmc.org.cn/CLOUDIMAGE/FY4B/AGRI/GCLR/FY4B_DISK_GCLR.JPG", kind: SourceKind::Direct, crop: Some((65, 80, 10835)) },
     Source { name: "GOES-East", home_url: "https://www.star.nesdis.noaa.gov/goes/fulldisk.php?sat=G19", kind: SourceKind::Goes, crop: Some((24, 24, 10800)) },
     Source { name: "GOES-West", home_url: "https://www.star.nesdis.noaa.gov/goes/fulldisk.php?sat=G18", kind: SourceKind::Goes, crop: Some((24, 24, 10800)) },
     Source { name: "Himawari-9", home_url: "https://himawari8-dl.nict.go.jp/himawari8/img/D531106", kind: SourceKind::Himawari, crop: None },
@@ -110,6 +110,12 @@ pub fn goes_image_url(html: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn every_builtin_provider_uses_https(){
+        for src in ALL {
+            assert!(src.home_url.starts_with("https://"),
+                "Provider {:?} must not accept unauthenticated satellite image transport",src.name);
+        }
+    }
     #[test] fn keeps_all_six_existing_sources() {
         assert_eq!(ALL.len(), SOURCES.len());
         for (a, b) in ALL.iter().zip(SOURCES) { assert_eq!(a.name,b); }
