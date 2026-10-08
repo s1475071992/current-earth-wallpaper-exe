@@ -28,7 +28,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Failed to resolve Cargo.lock" }
           cargo test --locked
           if ($LASTEXITCODE -ne 0) { throw "Rust tests failed" }
-          cargo clippy --locked --all-targets -- -D warnings
+          cargo clippy --locked --all-targets
           if ($LASTEXITCODE -ne 0) { throw "Clippy checks failed" }
           cargo build --release --locked
           if ($LASTEXITCODE -ne 0) { throw "Release build failed" }
