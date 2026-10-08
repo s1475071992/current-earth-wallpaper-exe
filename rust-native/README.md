@@ -1,45 +1,29 @@
-# Current Earth Wallpaper — Rust + Windows native migration
+# Current Earth Wallpaper (Rust + Win32 native)
 
-**Branch**: `rust-windows-native` (independent of the Python `main` branch).
+This is the **Rust migration branch**. The Python version remains in `main`.
 
-## Stage 1 — native foundation
+## Native application
+- Six satellite providers: FY4B, GOES-East (G19), GOES-West (G18), Himawari-9 (16 NICT tiles), NASA EPIC and Meteosat MTG WMS.
+- WinHTTP networking with built-in Windows certificate trust and 70 MiB per-image transfer bound.
+- Native Windows Imaging Component (WIC) clipping and downsampling. The 10848-pixel GOES original is **not** fully copied to a managed RGBA buffer.
+- WIC 4x4 Himawari tile assembly. Earth disk rendered on black canvas and BMP output written scanline-by-scanline (only one BMP row allocated).
+- Win32 SystemParametersInfoW desktop wallpaper setting; old files pruned only inside the app-managed filename namespace.
+- Periodic worker thread with three one-minute retry opportunities and configurable refresh interval.
+- Win32 UI, four interface languages, tray show/hide preference and Ctrl+Alt+E window restore.
+- Per-user JSON settings in `%LOCALAPPDATA%\CurrentEarthWallpaper\wallpaper_config.json`; image folder defaults to `%LOCALAPPDATA%\CurrentEarthWallpaper\wallpapers`.
 
-- [x] Source registry with all six satellite providers and tested metadata/URL parsers.
-- [x] JSON settings compatible with the Python version (`AppConfig` keys).
-- [x] Plain Windows GUI: no Tk, Qt, Electron or WebView.
-- [x] Four interface languages: 中文 / English / 日本語 / 한국어.
-- [x] Tray visibility preference, `Ctrl+Alt+E` restore shortcut, and safe no-tray fallback.
-- [x] GitHub Actions Windows x64 Rust release build and unit tests.
-- [ ] WinHTTP download and provider-specific transport integration.
-- [ ] 4×4 Himawari image tile composition.
-- [ ] Native WIC/GDI+ rendering, circular Earth mask, watermark, screen scaling.
-- [ ] Worker-thread refresh scheduler, bounded retries, automatic start.
-- [ ] Memory benchmarks and Windows desktop integration tests.
-
-**Important:** This first-stage EXE is an *interface/architecture preview*, not yet a working satellite wallpaper updater. The Start control deliberately reports that the image pipeline has not yet been migrated. Never replace your working version with this preview.
-
-## Build
-
-In a Windows x64 terminal with Rust stable:
-
+## Build and tests
 ```powershell
 cd rust-native
 cargo test
 cargo build --release
+.\target\release\CurrentEarthWallpaperNative.exe --self-test-render
 ```
+GitHub Actions uses Windows 2022 with automated Rust unit tests, native offline image-rendering smoke test and ten-second real process idle working-set/private-memory sampling. The recorded `memory-idle.json` is attached to the workflow run.
 
-The executable will be `rust-native/target/release/CurrentEarthWallpaperNative.exe`.
-
-Settings are written to `%LOCALAPPDATA%\CurrentEarthWallpaper\wallpaper_config.json`. The previous JSON next to the EXE is used as a read-only fallback for migration.
-
-## Resource use goals
-
-Idle 15–35 MB / GUI open below 50 MB are **targets**, not measurements. No high-resolution frames should stay decoded between updates.
-
-## Safety
-
-The app does not delete OS temporary directories, does not execute untrusted shell commands, and does not require elevated rights. When hiding the tray icon, it first verifies that the global restore hotkey was successfully registered. The on-window Exit button always remains available.
-
-## Phase 2
-
-Build WinHTTP networking and bounded-memory wallpaper processing in separate Rust modules, retaining the Python source's six source semantics. Add on-Windows integration tests and measure working-set peaks on high-res GOES images.
+## Limitations to verify
+- A successful CI run does not prove every remote satellite provider is reachable. API availability and providers' conditions can change.
+- Background *idle* memory is measured in CI; live-image decoding and remote download *peak* memory still need real device/provider tests.
+- NASA EPIC and WMS images may update more slowly than weather satellites.
+- NICT visualizations are not licensed for commercial use.
+- This branch is under active testing; do not overwrite the Python version until tested on your own Windows desktop.

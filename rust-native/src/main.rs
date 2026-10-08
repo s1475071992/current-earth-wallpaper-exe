@@ -4,6 +4,11 @@
 
 mod config;
 mod sources;
+#[cfg(windows)] mod http;
+#[cfg(windows)] mod imaging;
+#[cfg(windows)] mod wallpaper;
+#[cfg(windows)] mod engine;
+#[cfg(windows)] mod autostart;
 
 #[cfg(not(windows))]
 fn main() {
@@ -14,6 +19,7 @@ fn main() {
 mod winapp {
     use super::config::{self, AppConfig, LANGUAGES, SCALES, SOURCES};
     use std::sync::{Mutex, OnceLock};
+    use std::time::{Duration,Instant};
     use std::{ffi::c_void, ptr::{null, null_mut}};
     use windows_sys::Win32::{
         Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM},
@@ -35,6 +41,8 @@ mod winapp {
     const ID_START: u16 = 107;
     const ID_EXIT: u16 = 108;
     const ID_SHOW: u16 = 201;
+    const TIMER_ID:usize=1;
+    const REFRESH_DONE:u32=WM_APP+2;
     const ID_TRAY_EXIT: u16 = 202;
     const HOTKEY_ID: i32 = 0xEA47;
     const TRAY_ID: u32 = 17;
@@ -71,6 +79,10 @@ mod winapp {
         icon: usize,
         tray_added: bool,
         restore_hotkey: bool,
+        running:bool,
+        busy:bool,
+        failures:u32,
+        next_due:Instant,
     }
     static UI: OnceLock<Mutex<Ui>> = OnceLock::new();
 
@@ -107,6 +119,7 @@ mod winapp {
             let mut cfg = config::load();
             let hotkey = RegisterHotKey(hwnd, HOTKEY_ID, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, b'E' as u32) != 0;
             if !hotkey { cfg.show_tray_icon = true; }
+            if cfg.save_path.is_empty(){cfg.save_path=config::app_dir().join("wallpapers").to_string_lossy().into_owned();}
             let labels = [
                 control(hwnd, "STATIC", "", 24, 28, 185, 24, 0, 0),
                 control(hwnd, "STATIC", "", 24, 72, 185, 24, 0, 0),
@@ -141,6 +154,8 @@ mod winapp {
                 watermark: watermark as usize, start: start as usize, exit: exit as usize,
                 status: status as usize, icon: icon as usize,
                 tray_added: false, restore_hotkey: hotkey,
+                running:std::env::args().any(|a|a=="--autostart"),busy:false,failures:0,
+                next_due:Instant::now(),
             };
             ui.localize();
             ui.update_tray();
@@ -200,6 +215,34 @@ mod winapp {
             self.localize();
             let _ = config::save(&self.cfg);
         }
+
+        unsafe fn spawn_job(&mut self) {
+            if !self.running||self.busy { return; }
+            self.busy=true;
+            set_text(h(self.status), "Downloading satellite image...");
+            let cfg=self.cfg.clone();
+            let hwnd=self.parent;
+            std::thread::spawn(move || {
+                let outcome=std::panic::catch_unwind(||crate::engine::run_once(&cfg));
+                let result=outcome.unwrap_or_else(|_|Err("Worker unexpectedly panicked".into()));
+                let success=result.is_ok();
+                let report=Box::new(match result {
+                    Ok(path)=>format!("Updated wallpaper: {}",path.display()),
+                    Err(e)=>format!("Wallpaper update failed: {e}"),
+                });
+                let ptr=Box::into_raw(report);
+                if PostMessageW(h(hwnd),REFRESH_DONE,success as usize,ptr as isize)==0 {
+                    drop(Box::from_raw(ptr));
+                }
+            });
+        }
+        unsafe fn completed(&mut self,success:bool,notice:String){
+            self.busy=false;
+            if success{self.failures=0;}else{self.failures=self.failures.saturating_add(1);}
+            let seconds=if !success&&self.failures<=3{60}else{self.cfg.interval_minutes as u64*60};
+            self.next_due=Instant::now()+Duration::from_secs(seconds);
+            set_text(h(self.status), &notice);
+        }
         unsafe fn destroy(&mut self) {
             if self.tray_added {
                 Shell_NotifyIconW(NIM_DELETE, &self.tray_data());
@@ -231,6 +274,8 @@ mod winapp {
             WM_CREATE => {
                 let ui = Ui::new(hwnd);
                 let _ = UI.set(Mutex::new(ui));
+                SetTimer(hwnd,TIMER_ID,1000,None);
+                if let Some(state)=UI.get(){state.lock().unwrap().spawn_job();}
                 0
             },
             WM_COMMAND => {
@@ -239,8 +284,14 @@ mod winapp {
                     ID_EXIT | ID_TRAY_EXIT => { DestroyWindow(hwnd); },
                     ID_SHOW => { show_main(hwnd); },
                     ID_START => {
-                        let lang = UI.get().map(|v| v.lock().unwrap().cfg.language_index()).unwrap_or(0);
-                        MessageBoxW(hwnd, w(lang_text(lang,10)).as_ptr(), w("Rust Native Preview").as_ptr(), MB_OK | MB_ICONINFORMATION);
+                        if let Some(state)=UI.get(){
+                            let mut ui=state.lock().unwrap();
+                            ui.save_changes();
+                            ui.running=!ui.running;
+                            set_text(h(ui.start), if ui.running{"Stop automatic updates"}else{"Start updating"});
+                            if ui.running{ui.next_due=Instant::now();ui.spawn_job();}
+                            else{set_text(h(ui.status),"Automatic updates stopped.");}
+                        }
                     },
                     ID_SOURCE | ID_SCALE | ID_LANGUAGE | ID_INTERVAL | ID_TRAY_CHECK | ID_WATERMARK => {
                         if let Some(state) = UI.get() {
@@ -249,6 +300,21 @@ mod winapp {
                         }
                     },
                     _ => {},
+                }
+                0
+            },
+            WM_TIMER if wp==TIMER_ID => {
+                if let Some(state)=UI.get(){
+                    let mut ui=state.lock().unwrap();
+                    if ui.running&&!ui.busy&&Instant::now()>=ui.next_due{ui.spawn_job();}
+                }
+                0
+            },
+            REFRESH_DONE => {
+                let ptr=lp as *mut String;
+                if !ptr.is_null(){
+                    let report=*Box::from_raw(ptr);
+                    if let Some(state)=UI.get(){state.lock().unwrap().completed(wp!=0,report);}
                 }
                 0
             },
@@ -263,6 +329,7 @@ mod winapp {
                 0
             },
             WM_DESTROY => {
+                KillTimer(hwnd,TIMER_ID);
                 if let Some(state) = UI.get() { state.lock().unwrap().destroy(); }
                 PostQuitMessage(0);
                 0
@@ -295,7 +362,7 @@ mod winapp {
                 null_mut(), null_mut(), h_instance, null(),
             );
             if hwnd.is_null() { return; }
-            ShowWindow(hwnd, SW_SHOW);
+            ShowWindow(hwnd, if std::env::args().any(|a|a=="--autostart"){SW_HIDE}else{SW_SHOW});
             let mut msg: MSG = std::mem::zeroed();
             while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
                 TranslateMessage(&msg);
@@ -306,4 +373,18 @@ mod winapp {
 }
 
 #[cfg(windows)]
-fn main() { winapp::run(); }
+fn main() {
+    if std::env::args().any(|arg|arg=="--self-test-render"){
+        let p=std::env::temp_dir().join(format!("cew_test_{}.bmp",std::process::id()));
+        let out=std::env::temp_dir().join(format!("cew_render_{}.bmp",std::process::id()));
+        let pixels=vec![200u8;256*256*4];
+        wallpaper::write_bitmap(&p,256,256,&pixels).expect("write test image");
+        let image=imaging::load_scaled(&p,192,None).expect("WIC render");
+        wallpaper::compose(&out,640,480,&image,true).expect("compose image");
+        assert!(std::fs::metadata(&out).unwrap().len()>640*480*4);
+        let _=std::fs::remove_file(p);
+        let _=std::fs::remove_file(out);
+        return;
+    }
+    winapp::run();
+}

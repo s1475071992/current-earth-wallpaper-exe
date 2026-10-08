@@ -33,11 +33,41 @@ jobs:
           $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $exe))
           if ($bytes.Length -lt 10000 -or $bytes[0] -ne 77 -or $bytes[1] -ne 90) { throw "Invalid Windows EXE" }
           (Get-FileHash $exe -Algorithm SHA256).Hash | Out-File -FilePath target/release/SHA256.txt
+      - name: Offline WIC image rendering smoke test
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "target/release/CurrentEarthWallpaperNative.exe" -ArgumentList "--self-test-render" -NoNewWindow -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "Offline image rendering test failed with exit $($p.ExitCode)" }
+      - name: Idle memory sampling (real Windows process)
+        shell: pwsh
+        run: |
+          $samples = @()
+          $p = Start-Process -FilePath "target/release/CurrentEarthWallpaperNative.exe" -ArgumentList "--memory-probe" -PassThru
+          try {
+            for ($i = 0; $i -lt 40; $i++) {
+              Start-Sleep -Milliseconds 250
+              if ($p.HasExited) { throw "GUI exited unexpectedly with code $($p.ExitCode)" }
+              $live = Get-Process -Id $p.Id
+              $samples += [pscustomobject]@{
+                elapsedSeconds = [math]::Round(($i+1)*0.25, 2)
+                workingSetMiB = [math]::Round($live.WorkingSet64 / 1MB, 2)
+                privateMiB = [math]::Round($live.PrivateMemorySize64 / 1MB, 2)
+              }
+            }
+            $peak = ($samples | Measure-Object workingSetMiB -Maximum).Maximum
+            $end = $samples[-1]
+            Write-Host "Idle working set last=$($end.workingSetMiB) MiB peak=$peak MiB; private=$($end.privateMiB) MiB"
+            $samples | ConvertTo-Json -Depth 4 | Set-Content -Path "target/release/memory-idle.json"
+            if ($peak -gt 100) { throw "Idle working set > 100 MiB" }
+          } finally {
+            if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: CurrentEarthWallpaper-Rust-Native-Preview
           path: |
             rust-native/target/release/CurrentEarthWallpaperNative.exe
             rust-native/target/release/SHA256.txt
+            rust-native/target/release/memory-idle.json
           retention-days: 30
           if-no-files-found: error
