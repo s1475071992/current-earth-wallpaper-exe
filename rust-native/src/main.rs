@@ -1009,7 +1009,7 @@ mod winapp {
                 null_mut(), null_mut(), h_instance, null(),
             );
             if hwnd.is_null() { return; }
-            ShowWindow(hwnd, if std::env::args().any(|a|a=="--autostart"){SW_HIDE}else{SW_SHOW});
+            ShowWindow(hwnd, if std::env::args().any(|a|a=="--autostart" || a=="--instance-test-hidden"){SW_HIDE}else{SW_SHOW});
             let mut msg: MSG = std::mem::zeroed();
             while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
                 TranslateMessage(&msg);
