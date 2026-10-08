@@ -436,6 +436,21 @@ mod winapp {
         unsafe fn report_virtual_desktops(&mut self){
             self.append_event(format!("设置：虚拟桌面模式={}；物理多显示器模式={}；后台更新={}",
                 self.cfg.virtual_desktops_enabled,self.cfg.per_monitor_enabled,self.running));
+            self.append_event("正在独立进程中检测 Windows 11 专用壁纸接口…".into());
+            let hwnd=self.parent;
+            std::thread::spawn(move||{
+                let detail=match crate::virtual_wallpaper::read_only_probe(){
+                    Ok(json) if !json.is_empty()=>format!("虚拟桌面专用 COM 检测：{json}"),
+                    Ok(_)=>"虚拟桌面专用 COM 检测：未获得输出，请在 Windows 11 上实测。".into(),
+                    Err(e)=>format!("虚拟桌面专用 COM 检测失败：{e}"),
+                };
+                let ptr=Box::into_raw(Box::new(detail));
+                unsafe {
+                    if PostMessageW(h(hwnd),REFRESH_PROGRESS,0,ptr as isize)==0 {
+                        drop(Box::from_raw(ptr));
+                    }
+                }
+            });
             match crate::virtual_desktop::snapshot(){
                 Ok(snap)=>{
                     self.append_event(format!("检测结果：{} 个虚拟桌面；当前 GUID={}；来源={}",
