@@ -1,0 +1,24 @@
+name: Evaluate public satellite image sources (v1.2 candidates)
+on:
+  push:
+    branches: [rust-windows-native]
+    paths:
+      - .github/workflows/public-satellite-access-check.yml
+      - rust-native/tests/public_satellite_access.py
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe public endpoints without credentials
+        run: python3 rust-native/tests/public_satellite_access.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: public-satellite-source-test
+          path: satellite-source-access-results.json
+          if-no-files-found: warn
