@@ -143,9 +143,9 @@ pub fn run_once_for_in_desktop(cfg:&AppConfig,display:Option<&Monitor>,desktop:O
         .map_err(|e|format!("WIC image decode failed: {e}"))?;
     log(format!("WIC decode complete ({:.1}s)",started.elapsed().as_secs_f32()));
     check(cancel)?;
-    drop(scratch);
-    let key=display.map(|d|format!("-{:016x}",display_hash(&d.id))).unwrap_or_default();
-    let path=folder.join(format!("cew-{}{}-{}.bmp",std::process::id(),key,stamp()));
+    // Render to a throwaway scratch path. Publish a stable per-desktop+monitor
+    // file only after the image is completely written.
+    let path=temp_file(&folder,"render.bmp",&mut scratch);
     log(format!("Compose desktop BMP: {}x{}",w,h));
     wallpaper::compose(&path,w,h,&image,cfg.watermark_on)?;
     check(cancel)?;
@@ -160,27 +160,30 @@ pub fn run_once_for_in_desktop(cfg:&AppConfig,display:Option<&Monitor>,desktop:O
     check(cancel)?;
     if let Some(id)=desktop {
         if display.is_some(){
-            return Err("Combining different sources per physical monitor and virtual desktop requires spanned composition; safely skipped".into());
+            return Err("Combined per-monitor satellite + virtual desktops needs a composite wallpaper".into());
         }
-        // The virtual desktop private COM setter needs a stable path. Cache before assignment.
-        let stable=crate::virtual_cache::save(id,None,&cfg.image_source,&path)?;
+        // An attached single physical display produces an explicit desktop+monitor
+        // image file. Multiple monitors with one virtual-desktop wallpaper use 'all'.
+        let found=crate::monitor::connected().unwrap_or_default();
+        let sole=if found.len()==1{found.first()}else{None};
+        let stable=crate::virtual_cache::save(&folder,Some(id),sole,&cfg.image_source,&path)?;
         check(cancel)?;
         if !crate::virtual_desktop::snapshot()?.ids.iter().any(|known|known==id){
-            return Err(format!("Desktop {id} no longer exists; skip COM assignment"));
+            return Err(format!("Desktop {id} no longer exists; skip assignment"));
         }
-        log(format!("Windows: SetDesktopWallpaper(GUID={id}) via isolated COM helper"));
+        log(format!("Windows: SetDesktopWallpaper({id}) -> {}",stable.display()));
         crate::virtual_wallpaper::assign(id,&stable)?;
-        wallpaper::prune_own_wallpapers(&folder,&path,5);
         log(format!("Assigned desktop {} in {:.1}s",id,begin.elapsed().as_secs_f32()));
         Ok(stable)
-    } else {
-        log("Windows: set physical monitor/global wallpaper".into());
-        match display {
-            Some(d)=>crate::monitor::assign(&d.id,&path)?,
-            None=>wallpaper::set_wallpaper(&path)?,
+    }else{
+        let stable=crate::virtual_cache::save(&folder,None,display,&cfg.image_source,&path)?;
+        check(cancel)?;
+        log(format!("Windows: apply wallpaper from {}",stable.display()));
+        match display{
+            Some(d)=>crate::monitor::assign(&d.id,&stable)?,
+            None=>wallpaper::set_wallpaper(&stable)?,
         }
-        wallpaper::prune_own_wallpapers(&folder,&path,5);
-        log(format!("Wallpaper updated successfully in {:.1}s",begin.elapsed().as_secs_f32()));
-        Ok(path)
+        log(format!("Wallpaper updated in {:.1}s",begin.elapsed().as_secs_f32()));
+        Ok(stable)
     }
 }

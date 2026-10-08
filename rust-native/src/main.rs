@@ -810,6 +810,13 @@ mod winapp {
                         if scratch.removed>0{
                             ui.append_event(format!("已清理 {} 个过期的下载临时文件。",scratch.removed));
                         }
+                        if let Ok(desktops)=crate::virtual_desktop::snapshot(){
+                            let orphans=crate::maintenance::prune_orphan_profiles(&folder,&desktops.ids);
+                            if orphans.removed>0 {
+                                ui.append_event(format!("已清理 {} 张超过14天的已删除虚拟桌面壁纸，释放 {:.1} MiB。",
+                                    orphans.removed,orphans.freed as f64/1048576.0));
+                            }
+                        }
                     }
                 }
                 0

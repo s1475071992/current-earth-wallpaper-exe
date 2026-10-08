@@ -7,7 +7,8 @@ verification of independent Windows 11 26H2 virtual-desktop satellite wallpapers
 - Scheduled refresh of **all** virtual desktops without any network request on switch.
 - Six satellite providers, four languages, tray controls, autostart and native WIC rendering.
 - Sleep/hibernate pause + deduplicated 20-second post-wake refresh.
-- Automatic bounded BMP cache / old scratch-file cleanup with active wallpaper protection.
+- One fixed BMP per virtual desktop × monitor in the selected folder; atomic in-place replacement, no timestamped image buildup.
+- Automatic legacy-image, orphan-profile and temporary-file cleanup with active wallpaper protection.
 - Windows version/API capability check before virtual-desktop downloads.
 - 15-second isolated COM helper watchdog and session-wide crash circuit breaker.
 

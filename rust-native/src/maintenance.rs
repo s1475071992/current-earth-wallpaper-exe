@@ -87,6 +87,40 @@ pub fn prune_scratch(folder:&Path)->Report{
     }
     report
 }
+
+/// Remove only our fixed-name wallpaper profiles whose virtual desktop was
+/// deleted more than 14 days ago. Never prune an active GUID or global profile.
+/// A failed registry scan must skip cleanup entirely (caller supplies known IDs).
+pub fn prune_orphan_profiles(folder:&Path,active_ids:&[String])->Report{
+    let mut out=Report::default();
+    let Ok(dir)=fs::read_dir(folder)else{return out};
+    for entry in dir.flatten(){
+        let file=entry.path();
+        let Some(name)=file.file_name().and_then(|n|n.to_str())else{continue};
+        let Some(guid)=named_desktop(name)else{continue};
+        if active_ids.iter().any(|id|id.eq_ignore_ascii_case(&guid)){out.kept+=1;continue;}
+        let Ok(meta)=entry.metadata()else{continue};
+        if !meta.is_file(){continue;}
+        if meta.modified().ok().and_then(|t|t.elapsed().ok())
+            .is_none_or(|age|age<MAX_CACHE_AGE){out.kept+=1;continue;}
+        if fs::remove_file(&file).is_ok(){
+            let _=fs::remove_file(file.with_extension("meta.json"));
+            out.removed+=1;
+            out.freed=out.freed.saturating_add(meta.len());
+        }
+    }
+    out
+}
+fn named_desktop(name:&str)->Option<String>{
+    let rest=name.strip_prefix("cew-desktop-")?;
+    let (id,display)=rest.split_once("_monitor-")?;
+    let display=display.strip_suffix(".bmp")?;
+    if id.len()!=36 || !id.bytes().enumerate().all(|(i,c)|
+        if [8,13,18,23].contains(&i){c==b'-'}else{c.is_ascii_hexdigit()}){return None;}
+    if display!="all" && (display.len()!=16||!display.bytes().all(|c|c.is_ascii_hexdigit())){return None}
+    Some(id.to_string())
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
@@ -105,6 +139,12 @@ mod tests{
         assert!(p.join(sample(3)).exists());
         assert!(p.join("wallpaper_config.json").exists());
         fs::remove_dir_all(p).unwrap();
+    }
+    #[test]fn never_prune_unknown_names_or_global_bmps(){
+        assert!(named_desktop("random.bmp").is_none());
+        assert!(named_desktop("cew-desktop-global_monitor-all.bmp").is_none());
+        assert_eq!(named_desktop("cew-desktop-12345678-1234-1234-1234-123456789abc_monitor-abcdef0123456789.bmp").unwrap(),
+            "12345678-1234-1234-1234-123456789abc");
     }
     #[test]fn malformed_virtual_cache_names_never_eligible(){
         assert!(group("vd-bad.bmp").is_none());

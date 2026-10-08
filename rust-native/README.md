@@ -19,9 +19,12 @@ are maintained in the `rust-windows-native` branch.
 - Windows sleep/hibernate broadcasts pause downloads. Resume events (which Windows may
   send twice) schedule **at most one** catch-up refresh after a 20-second delay.
   Missed intervals are not replayed.
-- App-controlled wallpaper and temp-file cleanup; the virtual cache retains the newest
-  two BMPs per desktop/source and prunes older images at 14 days or above 64 files /
-  512 MiB when safe. The newest wallpapers are protected even if that exceeds the cap.
+- **One stable BMP per virtual-desktop and monitor identity**, in the image directory
+  selected in the settings window. Re-rendered images replace that same file atomically,
+  then the Windows wallpaper API is called again. Sources can change without creating
+  another BMP for the pair. A small .meta.json sidecar tracks the source for cache freshness.
+- Automatic cleanup of legacy timestamped images and incomplete downloads; files
+  from deleted virtual desktops are eligible for cleanup after 14 days.
 - Undocumented Windows COM interface safety: detect unsupported builds, probe before
   network downloads, abort/disable the helper after crashes or 15-second timeouts.
   Never silently fall back to applying the virtual wallpaper globally.
