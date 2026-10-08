@@ -14,6 +14,7 @@ mod sources;
 #[cfg(windows)] mod virtual_desktop;
 #[cfg(windows)] mod virtual_cache;
 mod virtual_cycle;
+#[cfg(windows)] mod display_apply;
 mod scheduler;
 mod maintenance;
 #[cfg(windows)] mod virtual_wallpaper;
@@ -323,6 +324,9 @@ mod winapp {
             set_text(h(self.vdesk_label),lang_text(l,26));
             set_text(h(self.vdesk_source_label),lang_text(l,27));
             set_text(h(self.vdesk_hint),lang_text(l,28));
+            if self.cfg.per_monitor_enabled && self.cfg.virtual_desktops_enabled{
+                set_text(h(self.vdesk_hint),"双模式：先选虚拟桌面，再选显示器，为两者组合选择卫星。");
+            }
             set_text(h(self.vdesk_probe),lang_text(l,29));
         }
         unsafe fn tray_data(&self) -> NOTIFYICONDATAW {
@@ -469,6 +473,31 @@ mod winapp {
                 Err(e)=>self.append_event(format!("虚拟桌面识别错误：{e}")),
             }
         }
+        unsafe fn schedule_offline_apply(&mut self){
+            if !(self.cfg.virtual_desktops_enabled && self.cfg.per_monitor_enabled) || !self.running {
+                return;
+            }
+            let Some(id)=self.active_vdesk.clone() else{return;};
+            let cfg=self.cfg.clone();
+            let generation=crate::display_apply::next_generation();
+            let hwnd=self.parent;
+            self.append_event(format!("虚拟桌面切换/启动：{}；只重新应用已有显示器图片，不下载。",id));
+            std::thread::spawn(move||{
+                let info=match crate::display_apply::reapply(&id,&cfg,generation){
+                    Ok((count,missing))=>format!("桌面 {}：已重新应用 {} 台显示器的壁纸，{} 台尚无缓存（等待后台定时生成）。",
+                        id,count,missing),
+                    Err(e) if e.contains("Superseded")||e.contains("Another virtual desktop")=>
+                        format!("跳过已经过期的桌面切换任务：{id}"),
+                    Err(e)=>format!("桌面 {id}：显示器壁纸重新应用失败：{e}"),
+                };
+                let ptr=Box::into_raw(Box::new(info));
+                unsafe{
+                    if PostMessageW(h(hwnd),REFRESH_PROGRESS,0,ptr as isize)==0{
+                        drop(Box::from_raw(ptr));
+                    }
+                }
+            });
+        }
         unsafe fn poll_virtual_desktops(&mut self){
             if !self.cfg.virtual_desktops_enabled{return;}
             self.vdesk_heartbeat=Instant::now();
@@ -484,15 +513,35 @@ mod winapp {
                         self.append_event(format!("虚拟桌面列表已更新：{} 个（下次定时周期自动覆盖全部）。",self.vdesks.len()));
                     }
                     if self.active_vdesk!=snap.current{
-                        self.active_vdesk=snap.current;
-                        self.append_event(format!("当前前台桌面：{}；仅更新界面状态，不触发壁纸刷新。",
-                            self.active_vdesk.as_deref().unwrap_or("未知")));
-                        if let Some(id)=self.active_vdesk.as_ref(){
-                            if let Some(index)=self.vdesks.iter().position(|v|v==id){
-                                SendMessageW(h(self.vdesk_picker),CB_SETCURSEL,index,0);
-                                self.sync_virtual_source();
+                        // Explorer's registry desktop GUID can be briefly stale.
+                        // Confirm twice before changing a physical monitor's wallpaper.
+                        let combined=self.cfg.per_monitor_enabled;
+                        if combined{
+                            if self.vdesk_candidate==snap.current{
+                                self.vdesk_candidate_count=self.vdesk_candidate_count.saturating_add(1);
+                            }else{
+                                self.vdesk_candidate=snap.current.clone();
+                                self.vdesk_candidate_count=1;
                             }
                         }
+                        if !combined || self.vdesk_candidate_count>=2{
+                            self.active_vdesk=snap.current;
+                            self.vdesk_candidate=None;
+                            self.vdesk_candidate_count=0;
+                            self.append_event(format!("当前前台桌面：{}；{}。",
+                                self.active_vdesk.as_deref().unwrap_or("未知"),
+                                if combined{"仅重新应用对应显示器的已缓存图片"}else{"切换不触发壁纸刷新"}));
+                            if let Some(id)=self.active_vdesk.as_ref(){
+                                if let Some(index)=self.vdesks.iter().position(|v|v==id){
+                                    SendMessageW(h(self.vdesk_picker),CB_SETCURSEL,index,0);
+                                    self.sync_virtual_source();
+                                }
+                                if combined{self.schedule_offline_apply();}
+                            }else if combined{crate::display_apply::invalidate();}
+                        }
+                    }else{
+                        self.vdesk_candidate=None;
+                        self.vdesk_candidate_count=0;
                     }
                     self.vdesk_error_reported=false;
                 }
@@ -540,11 +589,7 @@ mod winapp {
         }
         unsafe fn spawn_job(&mut self){
             if !self.running || self.busy{return;}
-            if self.cfg.virtual_desktops_enabled && self.cfg.per_monitor_enabled {
-                self.append_event("虚拟桌面与多物理显示器双模式目前不能同时启用，安全跳过本轮。".into());
-                self.next_due=Instant::now()+Duration::from_secs(60);
-                return;
-            }
+
             self.busy=true;
             if self.wake.pending(){self.wake.start_catchup();}
             self.cancel=Arc::new(AtomicBool::new(false));
@@ -565,7 +610,63 @@ mod winapp {
                             drop(Box::from_raw(ptr));
                         }
                     };
-                    if cfg.virtual_desktops_enabled{
+                    if cfg.virtual_desktops_enabled && cfg.per_monitor_enabled {
+                        // Every pair produces exactly one fixed BMP. We do NOT call
+                        // SetWallpaper for inactive virtual desktops.
+                        let desktops=crate::virtual_desktop::snapshot()?.ids;
+                        let monitors=crate::monitor::connected()?;
+                        let monitor_ids=monitors.iter().map(|m|m.id.clone()).collect::<Vec<_>>();
+                        let plan=crate::virtual_cycle::pair_plan(&cfg,&desktops,&monitor_ids)?;
+                        let folder=if cfg.save_path.trim().is_empty(){
+                            config::app_dir().join("wallpapers")
+                        }else{std::path::PathBuf::from(&cfg.save_path)};
+                        report(format!("双模式：{} 个虚拟桌面 × {} 台显示器，共 {} 张独立壁纸文件；后台按周期更新。",
+                            desktops.len(),monitors.len(),plan.len()));
+                        let mut success=0usize;
+                        let mut failed=Vec::new();
+                        let mut last=std::path::PathBuf::new();
+                        for (i,pair) in plan.iter().enumerate(){
+                            if cancel.load(Ordering::Relaxed){return Err("Cancelled".into());}
+                            let m=monitors.iter().find(|m|m.id==pair.monitor_id)
+                                .ok_or("Physical monitor disconnected")?;
+                            report(format!("组合 {}/{}：桌面={} / 显示器={}×{} / 图源={}",
+                                i+1,plan.len(),pair.desktop_id,m.width,m.height,pair.source));
+                            let path=if let Some(fresh)=crate::virtual_cache::recent(
+                                    &folder,&pair.desktop_id,Some(m),&pair.source,cfg.interval_minutes){
+                                report(format!("沿用现有组合文件，无须下载：{}",fresh.display()));
+                                Ok(fresh)
+                            }else{
+                                let mut one=cfg.clone();
+                                one.image_source=pair.source.clone();
+                                crate::engine::render_pair(&one,&pair.desktop_id,m,&cancel,&mut report)
+                            };
+                            match path{
+                                Ok(path)=>{
+                                    success+=1;
+                                    last=path.clone();
+                                    // Only the presently active virtual desktop may touch
+                                    // physical wallpapers. Switching also independently
+                                    // reapplies its pair files without downloading.
+                                    match crate::display_apply::apply_if_current(&pair.desktop_id,m,&path){
+                                        Ok(true)=>report(format!("当前桌面：已将图片应用到显示器 {}。",i+1)),
+                                        Ok(false)=>{},
+                                        Err(e)=>report(format!("组合图已保存，但显示器应用失败：{e}")),
+                                    }
+                                },
+                                Err(e)=>{
+                                    if cancel.load(Ordering::Relaxed){return Err("Cancelled".into());}
+                                    report(format!("组合 {} 生成失败：{e}；继续下一个。",i+1));
+                                    failed.push(format!("组合{}: {e}",i+1));
+                                }
+                            }
+                        }
+                        if failed.is_empty(){
+                            report(format!("双模式周期完成：{} / {} 张独立壁纸。",success,plan.len()));
+                            Ok(last)
+                        }else{
+                            Err(format!("本轮完成 {success}/{} 张；失败：{}",plan.len(),failed.join("; ")))
+                        }
+                    }else if cfg.virtual_desktops_enabled{
                         // Probe the private ABI before downloading possibly huge satellite data.
                         let capability=crate::virtual_wallpaper::read_only_probe()
                             .map_err(|e|format!("VIRTUAL_DESKTOP_UNSUPPORTED: {e}"))?;
@@ -751,7 +852,12 @@ mod winapp {
                             }
                             ui.running=!ui.running;
                             set_text(h(ui.start), lang_text(ui.cfg.language_index(),if ui.running{15}else{7}));
-                            if ui.running{ui.next_due=Instant::now();ui.append_event("用户启动自动更新。".into());ui.spawn_job();}
+                            if ui.running{
+                                ui.next_due=Instant::now();
+                                ui.append_event("用户启动自动更新。".into());
+                                ui.schedule_offline_apply();
+                                ui.spawn_job();
+                            }
                             else{
                                 ui.cancel.store(true,Ordering::Relaxed);
                                 ui.append_event("用户已停止自动更新；当前任务将尽快取消。".into());
@@ -799,7 +905,9 @@ mod winapp {
                     let mut ui=state.lock().unwrap();
                     // Desktop switching does not schedule or cancel refreshes.
                     if ui.running && ui.cfg.virtual_desktops_enabled &&
-                        ui.vdesk_heartbeat.elapsed()>=Duration::from_secs(30){
+                        ui.vdesk_heartbeat.elapsed()>=if ui.cfg.per_monitor_enabled{
+                            Duration::from_secs(1)
+                        }else{Duration::from_secs(30)}{
                         ui.poll_virtual_desktops();
                     }
                     if ui.running&&!ui.busy&&!ui.wake.sleeping()&&Instant::now()>=ui.next_due{ui.spawn_job();}
