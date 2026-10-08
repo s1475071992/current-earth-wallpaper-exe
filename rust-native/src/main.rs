@@ -138,6 +138,7 @@ mod winapp {
         next_due:Instant,
         wake:crate::scheduler::WakeGate,
         last_maintenance:Instant,
+        display_change_due:Option<Instant>,
     }
     static UI: OnceLock<Mutex<Ui>> = OnceLock::new();
 
@@ -278,6 +279,7 @@ mod winapp {
                 next_due:Instant::now(),
                 wake:crate::scheduler::WakeGate::default(),
                 last_maintenance:Instant::now(),
+                display_change_due:None,
             };
             ui.localize();
             ui.sync_pair_source();
@@ -516,10 +518,10 @@ mod winapp {
             let cfg=self.cfg.clone();
             let generation=crate::display_apply::next_generation();
             let hwnd=self.parent;
-            self.append_event(format!("虚拟桌面切换/启动：{}；只重新应用已有显示器图片，不下载。",id));
+            self.append_event(format!("恢复桌面 {} 的壁纸：单显示器使用原生虚拟桌面 COM，多显示器按屏幕设置；均不下载。",id));
             std::thread::spawn(move||{
                 let info=match crate::display_apply::reapply(&id,&cfg,generation){
-                    Ok((count,missing))=>format!("桌面 {}：已重新应用 {} 台显示器的壁纸，{} 台尚无缓存（等待后台定时生成）。",
+                    Ok((count,missing))=>format!("桌面 {}：已重新应用 {} 组壁纸，{} 组尚无缓存；单显示器已恢复各虚拟桌面原生壁纸。",
                         id,count,missing),
                     Err(e) if e.contains("Superseded")||e.contains("Another virtual desktop")=>
                         format!("跳过已经过期的桌面切换任务：{id}"),
@@ -649,7 +651,8 @@ mod winapp {
                                     // physical wallpapers. Switching also independently
                                     // reapplies its pair files without downloading.
                                     match crate::display_apply::apply_if_current(&pair.desktop_id,m,&path){
-                                        Ok(true)=>report(format!("当前桌面：已将图片应用到显示器 {}。",i+1)),
+                                        Ok(true)=>report(format!("已提交壁纸：目标桌面 {} / 显示器 {}（单屏为原生虚拟桌面绑定）。",
+                                            pair.desktop_id,pair.monitor_id)),
                                         Ok(false)=>{},
                                         Err(e)=>report(format!("组合图已保存，但显示器应用失败：{e}")),
                                     }
@@ -825,7 +828,11 @@ mod winapp {
                         if let Some(state)=UI.get(){state.lock().unwrap().report_virtual_desktops();}
                     },
                     ID_MONITOR_PROBE=>{
-                        if let Some(state)=UI.get(){state.lock().unwrap().detect_monitors();}
+                        if let Some(state)=UI.get(){
+                            let mut ui=state.lock().unwrap();
+                            ui.detect_monitors();
+                            ui.schedule_offline_apply();
+                        }
                     },
                     ID_VDESK_PICKER if notification==1=>{
                         if let Some(state)=UI.get(){state.lock().unwrap().sync_pair_source();}
@@ -901,9 +908,26 @@ mod winapp {
                 }
                 1
             },
+            WM_DISPLAYCHANGE => {
+                // The remaining monitor may need native per-virtual-desktop COM
+                // after a hot unplug. Wait for Explorer's display topology to
+                // settle, then rescan and REAPPLY EXISTING BMPs, never download.
+                if let Some(state)=UI.get(){
+                    let mut ui=state.lock().unwrap();
+                    ui.display_change_due=Some(Instant::now()+Duration::from_secs(2));
+                    crate::display_apply::invalidate();
+                    ui.append_event("检测到显示器连接/断开：2 秒后重新识别显示器并恢复已有壁纸（不下载）。".into());
+                }
+                0
+            },
             WM_TIMER if wp==TIMER_ID => {
                 if let Some(state)=UI.get(){
                     let mut ui=state.lock().unwrap();
+                    if ui.display_change_due.is_some_and(|due|Instant::now()>=due){
+                        ui.display_change_due=None;
+                        ui.detect_monitors();
+                        ui.schedule_offline_apply();
+                    }
                     // Desktop switching does not schedule or cancel refreshes.
                     if ui.running && ui.cfg.virtual_desktops_enabled &&
                         ui.vdesk_heartbeat.elapsed()>=if ui.cfg.per_monitor_enabled{
