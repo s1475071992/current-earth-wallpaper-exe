@@ -4,7 +4,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetSystemMetrics,SM_CXSCREEN,SM_CYSCREEN,SystemParametersInfoW,SPI_SETDESKWALLPAPER,
     SPIF_UPDATEINIFILE,SPIF_SENDCHANGE,
 };
-use windows_sys::Win32::System::Time::{GetLocalTime,SYSTEMTIME};
+use windows_sys::Win32::System::SystemInformation::GetLocalTime;
+use windows_sys::Win32::Foundation::SYSTEMTIME;
 use crate::imaging::Pixels;
 
 pub fn screen_size()->Result<(u32,u32),String> {

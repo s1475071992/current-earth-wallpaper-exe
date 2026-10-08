@@ -9,7 +9,7 @@ use windows::{core::{Interface,PCWSTR}, Win32::{
 pub struct Pixels { pub width:u32, pub height:u32, pub bgra:Vec<u8> }
 struct Apartment;
 impl Apartment {fn new()->Result<Self,String>{
-    unsafe { CoInitializeEx(None,COINIT_MULTITHREADED).map_err(|e|format!("COM init: {e}"))?; }
+    unsafe { CoInitializeEx(None,COINIT_MULTITHREADED).ok().map_err(|e|format!("COM init: {e}"))?; }
     Ok(Self)
 }}
 impl Drop for Apartment{fn drop(&mut self){unsafe{CoUninitialize();}}}
@@ -47,7 +47,7 @@ pub fn load_scaled(path:&Path,target:u32,crop:Option<(u32,u32,u32,u32)>)->Result
             None,0.0,WICBitmapPaletteTypeCustom).map_err(err)?;
         let len=(target as usize).checked_mul(target as usize).and_then(|v|v.checked_mul(4)).ok_or("Output too large")?;
         let mut bgra=vec![0u8;len];
-        conv.CopyPixels(None,target*4,&mut bgra).map_err(err)?;
+        conv.CopyPixels(std::ptr::null(),target*4,&mut bgra).map_err(err)?;
         Ok(Pixels{width:target,height:target,bgra})
     }
 }
