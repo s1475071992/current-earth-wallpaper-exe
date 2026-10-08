@@ -13,6 +13,7 @@ mod sources;
 #[cfg(windows)] mod monitor;
 #[cfg(windows)] mod virtual_desktop;
 #[cfg(windows)] mod virtual_cache;
+#[cfg(windows)] mod virtual_wallpaper;
 
 #[cfg(not(windows))]
 fn main() {
@@ -412,6 +413,7 @@ mod winapp {
         unsafe fn set_virtual_source(&mut self){
             if let Some(id)=self.selected_vdesk(){
                 let source=SOURCES[selected(h(self.vdesk_source)).min(SOURCES.len()-1)];
+                if self.cfg.virtual_desktop_sources.get(&id).is_some_and(|old|old==source) {return;}
                 self.cfg.virtual_desktop_sources.insert(id.clone(),source.into());
                 self.append_event(format!("虚拟桌面 {} 的默认卫星：{}",id,source));
                 self.sync_monitor_source();
@@ -562,8 +564,12 @@ mod winapp {
                 return;
             }
             self.busy=true;
+            // A pending switch is consumed by this job; only another switch may schedule a follow-up.
+            self.vdesk_pending=false;
             self.cancel=Arc::new(AtomicBool::new(false));
-            self.append_event(format!("开始更新：{}",self.cfg.image_source));
+            let source=self.active_vdesk.as_deref().and_then(|id|self.cfg.virtual_desktop_sources.get(id))
+                .unwrap_or(&self.cfg.image_source).clone();
+            self.append_event(format!("开始更新：{} / 虚拟桌面 {}",source,self.active_vdesk.as_deref().unwrap_or("未启用")));
             set_text(h(self.status),lang_text(self.cfg.language_index(),16));
             let cfg=self.cfg.clone();
             let desktop_id=if cfg.virtual_desktops_enabled{self.active_vdesk.clone()}else{None};
@@ -578,6 +584,9 @@ mod winapp {
                         }
                     };
                     if cfg.per_monitor_enabled {
+                        if desktop_id.is_some(){
+                            return Err("多显示器独立图源 + 虚拟桌面模式尚需跨屏图像合成，已安全阻止覆盖其他桌面。".into());
+                        }
                         let monitors=crate::monitor::connected()?;
                         if monitors.is_empty(){return Err("No connected displays available".into());}
                         let mut last=std::path::PathBuf::new();
@@ -610,18 +619,19 @@ mod winapp {
                         if let Some(id)=desktop_id.as_deref(){
                             selected_cfg.image_source=cfg.virtual_desktop_sources.get(id).cloned()
                                 .unwrap_or_else(||cfg.image_source.clone());
-                            if let Err(e)=crate::virtual_cache::restore(id,None,&selected_cfg.image_source,&cancel){
-                                report(format!("Cache restore unavailable: {e}"));
-                            }else{report(format!("Restored cached wallpaper for desktop {id}"));}
-                        }
-                        if cancel.load(Ordering::Relaxed){return Err("Cancelled".into());}
-                        let path=crate::engine::run_once_in_desktop(&selected_cfg,desktop_id.as_deref(),&cancel,&mut report)?;
-                        if let Some(id)=desktop_id.as_deref(){
-                            if let Err(e)=crate::virtual_cache::save(id,None,&selected_cfg.image_source,&path){
-                                report(format!("Cache save warning: {e}"));
+                            match crate::virtual_cache::restore(id,None,&selected_cfg.image_source,&cancel){
+                                Ok(path)=>{
+                                    report(format!("Restored per-virtual-desktop COM wallpaper for {id}"));
+                                    if crate::virtual_cache::recent(id,None,&selected_cfg.image_source,cfg.interval_minutes).is_some(){
+                                        report(format!("Cached image is younger than {} minutes; no download needed",cfg.interval_minutes));
+                                        return Ok(path);
+                                    }
+                                }
+                                Err(e)=>report(format!("No compatible wallpaper cache ({e}); download required"))
                             }
                         }
-                        Ok(path)
+                        if cancel.load(Ordering::Relaxed){return Err("Cancelled".into());}
+                        crate::engine::run_once_in_desktop(&selected_cfg,desktop_id.as_deref(),&cancel,&mut report)
                     }
                 });
                 let result=outcome.unwrap_or_else(|_|Err("Worker unexpectedly panicked".into()));
@@ -638,7 +648,8 @@ mod winapp {
         }
         unsafe fn completed(&mut self,success:bool,notice:String){
             self.busy=false;
-            if success{self.failures=0;}else{self.failures=self.failures.saturating_add(1);}
+            let cancelled=notice.contains("Cancelled")||notice.contains("cancelled");
+            if success{self.failures=0;}else if !cancelled{self.failures=self.failures.saturating_add(1);}
             let seconds=if !success&&self.failures<=3{60}else{self.cfg.interval_minutes as u64*60};
             self.next_due=if self.vdesk_pending && self.running {
                 self.vdesk_pending=false;
@@ -690,6 +701,7 @@ mod winapp {
             },
             WM_COMMAND => {
                 let id = (wp & 0xffff) as u16;
+                let notification=((wp>>16)&0xffff) as u16;
                 match id {
                     ID_EXIT | ID_TRAY_EXIT => {
                         if let Some(state)=UI.get(){state.lock().unwrap().cancel.store(true,Ordering::Relaxed);}
@@ -698,16 +710,16 @@ mod winapp {
                     ID_VDESK_PROBE=>{
                         if let Some(state)=UI.get(){state.lock().unwrap().report_virtual_desktops();}
                     },
-                    ID_VDESK_PICKER=>{
+                    ID_VDESK_PICKER if notification==1=>{
                         if let Some(state)=UI.get(){state.lock().unwrap().sync_virtual_source();}
                     },
-                    ID_VDESK_SOURCE=>{
+                    ID_VDESK_SOURCE if notification==1=>{
                         if let Some(state)=UI.get(){state.lock().unwrap().set_virtual_source();}
                     },
-                    ID_MONITOR_PICKER=>{
+                    ID_MONITOR_PICKER if notification==1=>{
                         if let Some(state)=UI.get(){state.lock().unwrap().sync_monitor_source();}
                     },
-                    ID_MONITOR_SOURCE=>{
+                    ID_MONITOR_SOURCE if notification==1=>{
                         if let Some(state)=UI.get(){state.lock().unwrap().save_monitor_source();}
                     },
                     ID_CLEAR_LOG=>{
@@ -893,6 +905,19 @@ fn virtual_desktop_probe(){
 
 #[cfg(windows)]
 fn main() {
+    let args:Vec<String>=std::env::args().collect();
+    if args.get(1).is_some_and(|s|s=="--vd-native-set"){
+        let result=match (args.get(2),args.get(3)){
+            (Some(id),Some(path))=>virtual_wallpaper::apply_child(id,std::path::Path::new(path)),
+            _=>Err("Helper requires desktop GUID and BMP path".into()),
+        };
+        if let Err(e)=result{eprintln!("{e}");std::process::exit(5);}
+        return;
+    }
+    if args.get(1).is_some_and(|s|s=="--vd-native-probe"){
+        println!("{}",virtual_wallpaper::probe_child());
+        return;
+    }
     if std::env::args().any(|arg|arg=="--virtual-desktop-probe") {virtual_desktop_probe();return;}
     if std::env::args().any(|arg|arg=="--self-test-goes") {live_goes_probe();return;}
     if std::env::args().any(|arg|arg=="--self-test-render"){

@@ -54,6 +54,14 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "Desktop registry probe crashed" }
           if (-not (Test-Path "target/release/virtual-desktop-probe.json")) { throw "Desktop diagnostic report missing" }
           Get-Content "target/release/virtual-desktop-probe.json" | Write-Host
+      - name: Validate isolated private COM helper is fail-closed (Windows Server)
+        shell: pwsh
+        run: |
+          $json = & "target/release/CurrentEarthWallpaperNative.exe" --vd-native-probe
+          $report = $json | ConvertFrom-Json
+          Write-Host "Private COM support: $($report.available) / $($report.error)"
+          # Windows Server CI is not target Windows 11 26H2. Probe must never write wallpaper.
+          if ($report.writes_wallpaper -eq $true) { throw "Unsafe private COM probe" }
       - name: Idle memory sampling (real Windows process)
         shell: pwsh
         run: |

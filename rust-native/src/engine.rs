@@ -155,12 +155,29 @@ pub fn run_once_for_in_desktop(cfg:&AppConfig,display:Option<&Monitor>,desktop:O
         if now.as_deref()!=Some(id) {return Err("Virtual desktop changed before wallpaper assignment".into());}
     }
     check(cancel)?;
-    log("Windows: apply wallpaper on active desktop / selected monitor".into());
-    match display {
-        Some(d)=>crate::monitor::assign(&d.id,&path)?,
-        None=>wallpaper::set_wallpaper(&path)?,
+    if let Some(id)=desktop {
+        if display.is_some(){
+            return Err("Combining different sources per physical monitor and virtual desktop requires spanned composition; safely skipped".into());
+        }
+        // The virtual desktop private COM setter needs a stable path. Cache before assignment.
+        let stable=crate::virtual_cache::save(id,None,&cfg.image_source,&path)?;
+        check(cancel)?;
+        if crate::virtual_desktop::snapshot()?.current.as_deref()!=Some(id){
+            return Err("Virtual desktop changed before private COM assignment".into());
+        }
+        log(format!("Windows: SetDesktopWallpaper(GUID={id}) via isolated COM helper"));
+        crate::virtual_wallpaper::assign(id,&stable)?;
+        wallpaper::prune_own_wallpapers(&folder,&path,5);
+        log(format!("Assigned desktop {} in {:.1}s",id,begin.elapsed().as_secs_f32()));
+        Ok(stable)
+    } else {
+        log("Windows: set physical monitor/global wallpaper".into());
+        match display {
+            Some(d)=>crate::monitor::assign(&d.id,&path)?,
+            None=>wallpaper::set_wallpaper(&path)?,
+        }
+        wallpaper::prune_own_wallpapers(&folder,&path,5);
+        log(format!("Wallpaper updated successfully in {:.1}s",begin.elapsed().as_secs_f32()));
+        Ok(path)
     }
-    wallpaper::prune_own_wallpapers(&folder,&path,5);
-    log(format!("Wallpaper updated successfully in {:.1}s",begin.elapsed().as_secs_f32()));
-    Ok(path)
 }

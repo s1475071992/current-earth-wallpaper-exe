@@ -76,3 +76,33 @@ required before calling the mode production-ready.
 Diagnostic mode: run EXE with --virtual-desktop-probe. It produces read-only
 "virtual-desktop-probe.json" next to the EXE with detected IDs/current status; no
 registry modifications or wallpaper changes.
+
+
+## Important: virtual desktop wallpaper implementation fix
+
+The previous virtual desktop compatibility mode used the regular SPI_SETDESKWALLPAPER and
+IDesktopWallpaper::SetWallpaper calls. Those APIs cannot reliably bind an image to a
+specific Windows 11 virtual desktop. The new single-monitor virtual desktop path uses
+the Windows 11 private virtual desktop COM SetDesktopWallpaper method with a concrete GUID.
+
+- ABI and method indices are from independently documented Windows 11 build 26100+
+  IVirtualDesktopManagerInternal, with QueryService IID 53F5CA0B-158F-4124-900C-057158060B27.
+- The call occurs only in the program's **isolated helper child process**, and only for
+  supported build numbers 26100..26399. If COM bindings change, an unsuccessful child
+  process cannot crash the main settings UI.
+- The helper finds the requested virtual desktop and verifies GetId before calling the
+  mutating interface method. It does not silently fall back to changing all desktops.
+- Wallpaper images have stable unique filenames in LOCALAPPDATA virtual-cache.
+- Switching to a desktop uses its cached image first; satellite download occurs only
+  when that desktop's cache is older than the configured refresh interval.
+- The two-stage switch detector and notification-only combo-box handlers avoid repeated
+  cancels and redundant downloads caused by focus/dropdown UI messages.
+
+The native private COM wallpaper API is **undocumented** and still requires testing on
+Windows 11 26H2 build 26300.9550. A successful server CI build validates syntax,
+logic, unit tests, and helper fail-closed behavior, but does not verify its appearance
+in the user's desktop session.
+
+When both "virtual desktop" and "different source per physical monitor" are enabled,
+this build explicitly blocks updates rather than silently writing another desktop's
+wallpaper. Full combined mode requires composing a spanned image and is still pending.
