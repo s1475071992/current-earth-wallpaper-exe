@@ -718,9 +718,10 @@ mod winapp {
                         if let Some(state)=UI.get(){
                             let mut ui=state.lock().unwrap();
                             ui.save_changes();
-                            ui.append_event(format!("更新前确认：虚拟桌面模式={}，多显示器模式={}，虚拟桌面数={}，当前={}。",
+                            let status=format!("更新前确认：虚拟桌面模式={}，多显示器模式={}，虚拟桌面数={}，当前={}。",
                                 ui.cfg.virtual_desktops_enabled,ui.cfg.per_monitor_enabled,
-                                ui.vdesks.len(),ui.active_vdesk.as_deref().unwrap_or("未知")));
+                                ui.vdesks.len(),ui.active_vdesk.as_deref().unwrap_or("未知"));
+                            ui.append_event(status);
                             if !ui.cfg.virtual_desktops_enabled && ui.vdesks.len()>1 {
                                 ui.append_event("提示：虚拟桌面模式当前关闭，壁纸只能按全局/物理显示器更新。请勾选“虚拟桌面独立壁纸”。".into());
                             }
