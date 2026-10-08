@@ -59,22 +59,10 @@ pub fn save(id:&str,monitor:Option<&Monitor>,source:&str,image:&Path)->Result<Pa
         Ok(())
     })();
     if result.is_err(){let _=fs::remove_file(&tmp);return Err(result.err().unwrap());}
-    trim(48);
+    let _=crate::maintenance::prune_virtual(&dir());
     Ok(dest)
 }
-fn trim(keep:usize){
-    let Ok(list)=fs::read_dir(dir())else{return;};
-    let mut bmp=Vec::new();
-    for entry in list.flatten(){
-        let path=entry.path();
-        if !path.file_name().and_then(|n|n.to_str()).is_some_and(|n|n.starts_with("vd-")&&n.ends_with(".bmp")){continue}
-        let modified=entry.metadata().ok().and_then(|m|m.modified().ok());
-        bmp.push((modified,path));
-    }
-    bmp.sort_by_key(|(time,_)|*time);
-    let remove=bmp.len().saturating_sub(keep);
-    for (_,path) in bmp.into_iter().take(remove){let _=fs::remove_file(path);}
-}
+
 #[cfg(test)]
 mod tests{
     use super::*;

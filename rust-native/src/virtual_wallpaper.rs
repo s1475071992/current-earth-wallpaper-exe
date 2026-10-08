@@ -1,7 +1,7 @@
 //! Windows 11 private COM virtual-desktop wallpaper API (builds 26100..=26399).
 //! Isolated in a subprocess: an ABI mismatch must not crash the wallpaper GUI.
 //! Unofficial API; no Windows desktop mutations if COM/desktop GUID verification fails.
-use std::{ffi::c_void, fs, path::{Path,PathBuf}, process::Command, ptr::{null, null_mut}, time::{Duration,Instant}};
+use std::{ffi::c_void, fs, path::Path, process::{Command,Stdio}, ptr::null_mut, sync::atomic::{AtomicBool,Ordering}, time::{Duration,Instant}};
 use windows_sys::Win32::System::Registry::*;
 
 #[repr(C)]
@@ -35,6 +35,8 @@ type Raw=*mut c_void;
 // Verified against Windows 11 24H2 IVirtualDesktopManagerInternal with the extra
 // SwitchDesktopAndMoveForegroundView slot. 13 is RemoveDesktop (unsafe to call as FindDesktop);
 // 16 is SetDesktopName, NOT SetDesktopWallpaper.
+static HELPER_DISABLED:AtomicBool=AtomicBool::new(false);
+const HELPER_TIMEOUT:Duration=Duration::from_secs(15);
 const SLOT_FIND_DESKTOP:usize=14;
 const SLOT_SET_DESKTOP_WALLPAPER:usize=17;
 #[link(name="ole32")]
@@ -184,17 +186,43 @@ pub fn probe_child()->serde_json::Value{
     }
 }
 fn run_helper(action:&str,id:&str,path:Option<&Path>)->Result<String,String>{
-    let mut proc=Command::new(std::env::current_exe().map_err(|e|e.to_string())?);
-    proc.arg(action).arg(id);
-    if let Some(p)=path{proc.arg(p);}
-    // Child process is isolated from the GUI. COM ABI faults return an error rather than crash it.
-    let child=proc.output().map_err(|e|e.to_string())?;
-    let stderr=String::from_utf8_lossy(&child.stderr).trim().to_string();
-    if !child.status.success(){
-        return Err(if stderr.is_empty(){format!("Virtual desktop COM helper exit {:?}",child.status.code())}else{stderr});
+    if HELPER_DISABLED.load(Ordering::Relaxed){
+        return Err("VIRTUAL_DESKTOP_UNSUPPORTED: Private COM helper disabled after crash/timeout; restart after checking Windows compatibility".into());
     }
-    Ok(String::from_utf8_lossy(&child.stdout).trim().into())
+    let mut cmd=Command::new(std::env::current_exe().map_err(|e|e.to_string())?);
+    cmd.arg(action).arg(id).stdout(Stdio::piped()).stderr(Stdio::piped());
+    if let Some(p)=path{cmd.arg(p);}
+    let mut child=cmd.spawn().map_err(|e|e.to_string())?;
+    let started=Instant::now();
+    loop {
+        match child.try_wait(){
+            Ok(Some(_))=>break,
+            Ok(None) if started.elapsed()<HELPER_TIMEOUT=>std::thread::sleep(Duration::from_millis(50)),
+            Ok(None)=>{
+                let _=child.kill();
+                let _=child.wait();
+                HELPER_DISABLED.store(true,Ordering::Relaxed);
+                return Err("VIRTUAL_DESKTOP_UNSUPPORTED: COM child process timed out (15s); helper disabled for this session".into());
+            },
+            Err(e)=>{let _=child.kill();return Err(format!("COM helper wait failed: {e}"));}
+        }
+    }
+    let output=child.wait_with_output().map_err(|e|e.to_string())?;
+    let stderr=String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if !output.status.success(){
+        let code=output.status.code();
+        // Windows NTSTATUS 0xC0000005 denotes a faulty/incompatible private COM ABI.
+        if code==Some(-1073741819) || code==Some(-1073740791) {
+            HELPER_DISABLED.store(true,Ordering::Relaxed);
+            return Err(format!("VIRTUAL_DESKTOP_UNSUPPORTED: private COM crashed ({code:?}), disabled until restart"));
+        }
+        return Err(if stderr.is_empty(){
+            format!("Private COM helper exit {code:?}")
+        }else{format!("Private COM helper failed: {stderr}")});
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().into())
 }
+
 pub fn assign(id:&str,image:&Path)->Result<(),String>{
     guid(id)?;
     let absolute=image.canonicalize().map_err(|e|e.to_string())?;

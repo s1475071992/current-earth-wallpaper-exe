@@ -1,6 +1,6 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
-//! First migration milestone: small, native Win32 configuration window.
-//! Image refresh intentionally disabled until the native image engine is implemented.
+//! Stable Rust v1.0: native Win32 configuration, per-virtual-desktop wallpapers,
+//! controlled background refresh and sleep/resume safety.
 
 mod config;
 mod sources;
@@ -14,11 +14,13 @@ mod sources;
 #[cfg(windows)] mod virtual_desktop;
 #[cfg(windows)] mod virtual_cache;
 mod virtual_cycle;
+mod scheduler;
+mod maintenance;
 #[cfg(windows)] mod virtual_wallpaper;
 
 #[cfg(not(windows))]
 fn main() {
-    eprintln!("This GUI runs on Windows. Cargo unit tests can run on any platform.");
+    eprintln!("Current Earth Wallpaper v1.0.0 supports Windows; unit tests are portable.");
 }
 
 #[cfg(windows)]
@@ -79,10 +81,10 @@ mod winapp {
     }
     fn lang_text(lang: usize, key: usize) -> &'static str {
         const DICT: [[&str; 30]; 4] = [
-            ["实时地球壁纸 · Rust 原生预览", "卫星图源", "壁纸大小", "界面语言", "更新间隔（分钟）", "显示托盘图标", "显示时间水印", "开始更新", "退出程序", "配置已保存。壁纸下载与渲染引擎正在迁移。", "原生引擎尚未完成，请勿替代正式版。", "无法隐藏托盘：Ctrl+Alt+E 已被其他软件占用。", "显示主窗口", "图像保存目录", "开机自动更新", "停止更新", "正在更新壁纸…", "执行日志", "清空显示", "关闭窗口：点击“是”隐藏并继续后台更新；点击“否”彻底退出并停止更新；“取消”留在界面。", "关闭窗口", "将运行日志保存到文件", "为每台物理显示器分别选择卫星源", "显示器", "该显示器的卫星源", "虚拟桌面独立壁纸（26H2 兼容模式）", "虚拟桌面", "该虚拟桌面的卫星源", "关闭后仍保留各桌面配置", "检测虚拟桌面"],
-            ["Current Earth Wallpaper · Rust Native Preview", "Satellite source", "Wallpaper size", "Interface language", "Update interval (minutes)", "Show tray icon", "Time watermark", "Start updating", "Exit app", "Settings saved. Native image engine is being ported.", "Native image engine isn't ready yet. Keep using the stable build.", "Cannot hide tray: Ctrl+Alt+E is in use.", "Show window", "Image folder", "Start with Windows", "Stop updating", "Updating wallpaper...", "Execution log", "Clear view", "Close window: Yes hides and keeps updating; No quits and stops; Cancel stays.", "Close window", "Save logs to file", "Different satellite for each monitor", "Monitor", "Satellite for this monitor", "Virtual desktop wallpapers (26H2 compatibility)", "Virtual desktop", "Satellite for this desktop", "Settings retained when disabled", "Check desktops"],
-            ["リアルタイム地球壁紙 · Rust ネイティブ", "衛星ソース", "壁紙の大きさ", "表示言語", "更新間隔（分）", "トレイアイコンを表示", "時刻の透かし", "更新開始", "終了", "設定を保存しました。画像エンジンは移植中です。", "画像エンジンはまだ未完成です。", "トレイを隠せません。Ctrl+Alt+E は使用中です。", "ウィンドウを表示", "画像の保存先", "Windows起動時に自動更新", "更新停止", "壁紙を更新中…", "実行ログ", "表示を消去", "はい：非表示で更新継続。いいえ：終了して更新停止。キャンセル：戻る。", "ウィンドウを閉じる", "ログをファイルに保存", "モニターごとに衛星を選択", "モニター", "このモニターの衛星", "仮想デスクトップ別壁紙（26H2対応）", "仮想デスクトップ", "このデスクトップの衛星", "無効でも設定は保持されます", "デスクトップ検出"],
-            ["실시간 지구 배경화면 · Rust 네이티브", "위성 소스", "배경화면 크기", "인터페이스 언어", "갱신 간격(분)", "트레이 아이콘 표시", "시간 워터마크", "업데이트 시작", "종료", "설정 저장됨. 이미지 엔진을 이식하는 중입니다.", "이미지 엔진이 아직 준비되지 않았습니다.", "트레이 숨기기 불가: Ctrl+Alt+E 사용 중.", "창 표시", "이미지 저장 폴더", "Windows 시작 시 자동 업데이트", "업데이트 중지", "배경화면 갱신 중…", "실행 로그", "보기 지우기", "예: 숨기고 계속 업데이트. 아니요: 종료 및 중지. 취소: 돌아가기.", "창 닫기", "실행 로그 파일에 저장", "모니터별로 위성 소스 설정", "모니터", "이 모니터의 위성", "가상 데스크톱별 배경화면 (26H2 호환)", "가상 데스크톱", "이 데스크톱의 위성", "사용 중지 시에도 설정 유지", "바탕 화면 감지"],
+            ["实时地球壁纸 · v1.0", "卫星图源", "壁纸大小", "界面语言", "更新间隔（分钟）", "显示托盘图标", "显示时间水印", "开始更新", "退出程序", "配置已保存。壁纸下载与渲染引擎正在迁移。", "原生引擎尚未完成，请勿替代正式版。", "无法隐藏托盘：Ctrl+Alt+E 已被其他软件占用。", "显示主窗口", "图像保存目录", "开机自动更新", "停止更新", "正在更新壁纸…", "执行日志", "清空显示", "关闭窗口：点击“是”隐藏并继续后台更新；点击“否”彻底退出并停止更新；“取消”留在界面。", "关闭窗口", "将运行日志保存到文件", "为每台物理显示器分别选择卫星源", "显示器", "该显示器的卫星源", "虚拟桌面独立壁纸（26H2 兼容模式）", "虚拟桌面", "该虚拟桌面的卫星源", "关闭后仍保留各桌面配置", "检测虚拟桌面"],
+            ["Current Earth Wallpaper · v1.0", "Satellite source", "Wallpaper size", "Interface language", "Update interval (minutes)", "Show tray icon", "Time watermark", "Start updating", "Exit app", "Settings saved. Native image engine is being ported.", "Native image engine isn't ready yet. Keep using the stable build.", "Cannot hide tray: Ctrl+Alt+E is in use.", "Show window", "Image folder", "Start with Windows", "Stop updating", "Updating wallpaper...", "Execution log", "Clear view", "Close window: Yes hides and keeps updating; No quits and stops; Cancel stays.", "Close window", "Save logs to file", "Different satellite for each monitor", "Monitor", "Satellite for this monitor", "Virtual desktop wallpapers (26H2 compatibility)", "Virtual desktop", "Satellite for this desktop", "Settings retained when disabled", "Check desktops"],
+            ["リアルタイム地球壁紙 · v1.0", "衛星ソース", "壁紙の大きさ", "表示言語", "更新間隔（分）", "トレイアイコンを表示", "時刻の透かし", "更新開始", "終了", "設定を保存しました。画像エンジンは移植中です。", "画像エンジンはまだ未完成です。", "トレイを隠せません。Ctrl+Alt+E は使用中です。", "ウィンドウを表示", "画像の保存先", "Windows起動時に自動更新", "更新停止", "壁紙を更新中…", "実行ログ", "表示を消去", "はい：非表示で更新継続。いいえ：終了して更新停止。キャンセル：戻る。", "ウィンドウを閉じる", "ログをファイルに保存", "モニターごとに衛星を選択", "モニター", "このモニターの衛星", "仮想デスクトップ別壁紙（26H2対応）", "仮想デスクトップ", "このデスクトップの衛星", "無効でも設定は保持されます", "デスクトップ検出"],
+            ["실시간 지구 배경화면 · v1.0", "위성 소스", "배경화면 크기", "인터페이스 언어", "갱신 간격(분)", "트레이 아이콘 표시", "시간 워터마크", "업데이트 시작", "종료", "설정 저장됨. 이미지 엔진을 이식하는 중입니다.", "이미지 엔진이 아직 준비되지 않았습니다.", "트레이 숨기기 불가: Ctrl+Alt+E 사용 중.", "창 표시", "이미지 저장 폴더", "Windows 시작 시 자동 업데이트", "업데이트 중지", "배경화면 갱신 중…", "실행 로그", "보기 지우기", "예: 숨기고 계속 업데이트. 아니요: 종료 및 중지. 취소: 돌아가기.", "창 닫기", "실행 로그 파일에 저장", "모니터별로 위성 소스 설정", "모니터", "이 모니터의 위성", "가상 데스크톱별 배경화면 (26H2 호환)", "가상 데스크톱", "이 데스크톱의 위성", "사용 중지 시에도 설정 유지", "바탕 화면 감지"],
         ];
         DICT[lang.min(3)][key.min(29)]
     }
@@ -135,6 +137,8 @@ mod winapp {
         busy:bool,
         failures:u32,
         next_due:Instant,
+        wake:crate::scheduler::WakeGate,
+        last_maintenance:Instant,
     }
     static UI: OnceLock<Mutex<Ui>> = OnceLock::new();
 
@@ -279,9 +283,12 @@ mod winapp {
                 autostart_check:autostart_check as usize,
                 running:std::env::args().any(|a|a=="--autostart"),busy:false,failures:0,
                 next_due:Instant::now(),
+                wake:crate::scheduler::WakeGate::default(),
+                last_maintenance:Instant::now(),
             };
             ui.localize();
             ui.update_tray();
+            ui.append_event("Current Earth Wallpaper v1.0.0 · 稳定性增强版".into());
             ui.append_event("应用已启动；右上角 × 可以选择后台运行或彻底退出。".into());
             ui.append_event(format!("当前连接的物理显示器：{} 台",ui.monitors.len()));
             if let Some(warning)=monitor_warning{ui.append_event(format!("显示器枚举失败：{warning}"));}
@@ -539,6 +546,7 @@ mod winapp {
                 return;
             }
             self.busy=true;
+            if self.wake.pending(){self.wake.start_catchup();}
             self.cancel=Arc::new(AtomicBool::new(false));
             if self.cfg.virtual_desktops_enabled{
                 self.append_event("后台定时周期开始：依次处理全部虚拟桌面，不受桌面切换影响。".into());
@@ -558,6 +566,15 @@ mod winapp {
                         }
                     };
                     if cfg.virtual_desktops_enabled{
+                        // Probe the private ABI before downloading possibly huge satellite data.
+                        let capability=crate::virtual_wallpaper::read_only_probe()
+                            .map_err(|e|format!("VIRTUAL_DESKTOP_UNSUPPORTED: {e}"))?;
+                        let probe:serde_json::Value=serde_json::from_str(&capability)
+                            .map_err(|e|format!("VIRTUAL_DESKTOP_UNSUPPORTED: COM capability probe returned invalid JSON: {e}"))?;
+                        if probe.get("available")!=Some(&serde_json::Value::Bool(true)){
+                            return Err(format!("VIRTUAL_DESKTOP_UNSUPPORTED: Windows virtual desktop COM unavailable after system update: {}",
+                                probe.get("error").unwrap_or(&serde_json::Value::Null)));
+                        }
                         // Do not depend on CurrentVirtualDesktop. Snapshot the GUID list
                         // and target every virtual desktop, including inactive ones.
                         let ids=crate::virtual_desktop::snapshot()?.ids;
@@ -590,6 +607,9 @@ mod winapp {
                                 Ok(path)=>{completed+=1;last=path;report(format!("桌面 {} 更新成功。",index+1));},
                                 Err(e)=>{
                                     if cancel.load(Ordering::Relaxed){return Err("Cancelled".into());}
+                                    if e.contains("VIRTUAL_DESKTOP_UNSUPPORTED"){
+                                        return Err(e);
+                                    }
                                     report(format!("桌面 {} 更新失败：{e}；继续其他桌面。",index+1));
                                     failures.push(format!("桌面 {}: {e}",index+1));
                                 }
@@ -634,8 +654,12 @@ mod winapp {
             self.busy=false;
             let cancelled=notice.contains("Cancelled")||notice.contains("cancelled");
             if success{self.failures=0;}else if !cancelled{self.failures=self.failures.saturating_add(1);}
-            let seconds=if !success&&self.failures<=3{60}else{self.cfg.interval_minutes as u64*60};
-            self.next_due=Instant::now()+Duration::from_secs(seconds);
+            let incompatible=notice.contains("VIRTUAL_DESKTOP_UNSUPPORTED");
+            let seconds=if !success&&!incompatible&&self.failures<=3{60}else{self.cfg.interval_minutes as u64*60};
+            self.next_due=if self.wake.pending() && self.running {
+                // The in-flight pre-sleep job finished: run one deferred cycle, not N missed cycles.
+                Instant::now()+crate::scheduler::WAKE_SETTLE
+            }else{Instant::now()+Duration::from_secs(seconds)};
             self.append_event(if success{format!("成功：{notice}")}else{format!("失败：{notice}")});
             if self.running{
                 self.append_event(format!("下次自动更新：约 {} 分钟后（失败时可能提前重试）",seconds/60));
@@ -740,6 +764,29 @@ mod winapp {
                 }
                 0
             },
+            WM_POWERBROADCAST => {
+                // WinUser.h PBT_APMSUSPEND=0x4, PBT_APMRESUMEAUTOMATIC=0x12,
+                // PBT_APMRESUMESUSPEND=0x7. The two resume messages may both arrive.
+                if let Some(state)=UI.get(){
+                    let mut ui=state.lock().unwrap();
+                    match wp {
+                        0x4=>{
+                            if ui.wake.suspend(){
+                                ui.cancel.store(true,Ordering::Relaxed);
+                                ui.append_event("系统准备休眠：已请求取消当前下载，暂停定时调度。".into());
+                            }
+                        },
+                        0x12|0x7=>{
+                            if ui.wake.resume(Instant::now()){
+                                ui.next_due=Instant::now()+crate::scheduler::WAKE_SETTLE;
+                                ui.append_event("电脑已从休眠/睡眠恢复：等待 20 秒后最多执行一次后台更新。".into());
+                            }
+                        },
+                        _=>{}
+                    }
+                }
+                1
+            },
             WM_TIMER if wp==TIMER_ID => {
                 if let Some(state)=UI.get(){
                     let mut ui=state.lock().unwrap();
@@ -748,7 +795,22 @@ mod winapp {
                         ui.vdesk_heartbeat.elapsed()>=Duration::from_secs(30){
                         ui.poll_virtual_desktops();
                     }
-                    if ui.running&&!ui.busy&&Instant::now()>=ui.next_due{ui.spawn_job();}
+                    if ui.running&&!ui.busy&&!ui.wake.sleeping()&&Instant::now()>=ui.next_due{ui.spawn_job();}
+                    if ui.last_maintenance.elapsed()>Duration::from_secs(3600){
+                        ui.last_maintenance=Instant::now();
+                        let cache=crate::maintenance::prune_virtual(&config::app_dir().join("virtual-cache"));
+                        if cache.removed>0{
+                            ui.append_event(format!("自动清理缓存：移除 {} 个旧文件，释放 {:.1} MiB；保留 {} 个。",
+                                cache.removed,cache.freed as f64/1048576.0,cache.kept));
+                        }
+                        // Clean only our own incomplete image downloads, never arbitrary user files.
+                        let folder=if ui.cfg.save_path.trim().is_empty(){config::app_dir().join("wallpapers")}
+                            else{std::path::PathBuf::from(&ui.cfg.save_path)};
+                        let scratch=crate::maintenance::prune_scratch(&folder);
+                        if scratch.removed>0{
+                            ui.append_event(format!("已清理 {} 个过期的下载临时文件。",scratch.removed));
+                        }
+                    }
                 }
                 0
             },

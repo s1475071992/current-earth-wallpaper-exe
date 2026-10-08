@@ -142,13 +142,33 @@ pub fn set_wallpaper(path:&Path)->Result<(),String>{
     else{Ok(())}
 }
 pub fn prune_own_wallpapers(folder:&Path,active:&Path,max_count:usize){
-    let mut entries:Vec<PathBuf>=fs::read_dir(folder).into_iter().flatten().flatten()
-        .map(|e|e.path())
-        .filter(|p|p.file_name().and_then(|n|n.to_str())
-            .is_some_and(|n|n.starts_with("cew-")&&n.ends_with(".bmp"))).collect();
-    entries.sort();
-    for p in entries.iter().take(entries.len().saturating_sub(max_count)){
-        if p!=active { let _=fs::remove_file(p); }
+    // Screens using different wallpapers must retain their own file paths.
+    // Preserve the two newest generated BMPs per display identity, plus active.
+    let mut entries:Vec<(PathBuf,String,std::time::SystemTime)>=fs::read_dir(folder).into_iter().flatten().flatten()
+        .filter_map(|entry|{
+            let p=entry.path();
+            let name=p.file_name()?.to_str()?;
+            if !name.starts_with("cew-")||!name.ends_with(".bmp"){return None}
+            let chunks=name.trim_end_matches(".bmp").split('-').collect::<Vec<_>>();
+            // cew-PID-timestamp or cew-PID-monitorhash-timestamp
+            if chunks.len()!=3 && chunks.len()!=4{return None}
+            if !chunks[1].bytes().all(|v|v.is_ascii_digit()){return None}
+            let identity=if chunks.len()==4 {chunks[2].to_string()}else{"global".to_string()};
+            let m=entry.metadata().ok()?;
+            if !m.is_file(){return None}
+            Some((p,identity,m.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)))
+        }).collect();
+    entries.sort_by(|a,b|b.2.cmp(&a.2));
+    let mut counts=std::collections::BTreeMap::<String,usize>::new();
+    let mut kept=0usize;
+    for (path,identity,modified) in entries{
+        let c=counts.entry(identity).or_default();
+        *c+=1;
+        let recent=std::time::SystemTime::now().duration_since(modified)
+            .unwrap_or_default()<std::time::Duration::from_secs(14*86400);
+        let protect=path==active || *c<=2;
+        if protect || (kept<max_count.max(20) && recent){kept+=1;continue}
+        let _=fs::remove_file(path);
     }
 }
 #[cfg(test)]
