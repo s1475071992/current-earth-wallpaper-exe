@@ -59,11 +59,10 @@ mod winapp {
     const ID_FILE_LOG: u16 = 112;
     const ID_MULTI_MONITOR: u16 = 113;
     const ID_MONITOR_PICKER: u16 = 114;
-    const ID_MONITOR_SOURCE: u16 = 115;
-    const ID_VDESK_ENABLED:u16=116;
     const ID_VDESK_PICKER:u16=117;
     const ID_VDESK_SOURCE:u16=118;
     const ID_VDESK_PROBE:u16=119;
+    const ID_MONITOR_PROBE:u16=120;
     const EM_SETSEL:u32=0x00B1; // Edit control selection
     const EM_SCROLLCARET:u32=0x00B7; // Scroll to caret
     const ID_SHOW: u16 = 201;
@@ -82,10 +81,10 @@ mod winapp {
     }
     fn lang_text(lang: usize, key: usize) -> &'static str {
         const DICT: [[&str; 30]; 4] = [
-            ["实时地球壁纸 · v1.1 测试版", "卫星图源", "壁纸大小", "界面语言", "更新间隔（分钟）", "显示托盘图标", "显示时间水印", "开始更新", "退出程序", "配置已保存。壁纸下载与渲染引擎正在迁移。", "原生引擎尚未完成，请勿替代正式版。", "无法隐藏托盘：Ctrl+Alt+E 已被其他软件占用。", "显示主窗口", "图像保存目录", "开机自动更新", "停止更新", "正在更新壁纸…", "执行日志", "清空显示", "关闭窗口：点击“是”隐藏并继续后台更新；点击“否”彻底退出并停止更新；“取消”留在界面。", "关闭窗口", "将运行日志保存到文件", "为每台物理显示器分别选择卫星源", "显示器", "该显示器的卫星源", "虚拟桌面独立壁纸（26H2 兼容模式）", "虚拟桌面", "该虚拟桌面的卫星源", "关闭后仍保留各桌面配置", "检测虚拟桌面"],
-            ["Current Earth Wallpaper · v1.1 beta", "Satellite source", "Wallpaper size", "Interface language", "Update interval (minutes)", "Show tray icon", "Time watermark", "Start updating", "Exit app", "Settings saved. Native image engine is being ported.", "Native image engine isn't ready yet. Keep using the stable build.", "Cannot hide tray: Ctrl+Alt+E is in use.", "Show window", "Image folder", "Start with Windows", "Stop updating", "Updating wallpaper...", "Execution log", "Clear view", "Close window: Yes hides and keeps updating; No quits and stops; Cancel stays.", "Close window", "Save logs to file", "Different satellite for each monitor", "Monitor", "Satellite for this monitor", "Virtual desktop wallpapers (26H2 compatibility)", "Virtual desktop", "Satellite for this desktop", "Settings retained when disabled", "Check desktops"],
-            ["リアルタイム地球壁紙 · v1.1 ベータ", "衛星ソース", "壁紙の大きさ", "表示言語", "更新間隔（分）", "トレイアイコンを表示", "時刻の透かし", "更新開始", "終了", "設定を保存しました。画像エンジンは移植中です。", "画像エンジンはまだ未完成です。", "トレイを隠せません。Ctrl+Alt+E は使用中です。", "ウィンドウを表示", "画像の保存先", "Windows起動時に自動更新", "更新停止", "壁紙を更新中…", "実行ログ", "表示を消去", "はい：非表示で更新継続。いいえ：終了して更新停止。キャンセル：戻る。", "ウィンドウを閉じる", "ログをファイルに保存", "モニターごとに衛星を選択", "モニター", "このモニターの衛星", "仮想デスクトップ別壁紙（26H2対応）", "仮想デスクトップ", "このデスクトップの衛星", "無効でも設定は保持されます", "デスクトップ検出"],
-            ["실시간 지구 배경화면 · v1.1 베타", "위성 소스", "배경화면 크기", "인터페이스 언어", "갱신 간격(분)", "트레이 아이콘 표시", "시간 워터마크", "업데이트 시작", "종료", "설정 저장됨. 이미지 엔진을 이식하는 중입니다.", "이미지 엔진이 아직 준비되지 않았습니다.", "트레이 숨기기 불가: Ctrl+Alt+E 사용 중.", "창 표시", "이미지 저장 폴더", "Windows 시작 시 자동 업데이트", "업데이트 중지", "배경화면 갱신 중…", "실행 로그", "보기 지우기", "예: 숨기고 계속 업데이트. 아니요: 종료 및 중지. 취소: 돌아가기.", "창 닫기", "실행 로그 파일에 저장", "모니터별로 위성 소스 설정", "모니터", "이 모니터의 위성", "가상 데스크톱별 배경화면 (26H2 호환)", "가상 데스크톱", "이 데스크톱의 위성", "사용 중지 시에도 설정 유지", "바탕 화면 감지"],
+            ["实时地球壁纸 · v1.1 测试版", "卫星图源", "壁纸大小", "界面语言", "更新间隔（分钟）", "显示托盘图标", "显示时间水印", "开始更新", "退出程序", "配置已保存。壁纸下载与渲染引擎正在迁移。", "原生引擎尚未完成，请勿替代正式版。", "无法隐藏托盘：Ctrl+Alt+E 已被其他软件占用。", "显示主窗口", "图像保存目录", "开机自动更新", "停止更新", "正在更新壁纸…", "执行日志", "清空显示", "关闭窗口：点击“是”隐藏并继续后台更新；点击“否”彻底退出并停止更新；“取消”留在界面。", "关闭窗口", "将运行日志保存到文件", "为每个虚拟桌面及显示器设置卫星源", "显示器", "该显示器的卫星源", "虚拟桌面独立壁纸（26H2 兼容模式）", "虚拟桌面", "所选桌面＋显示器的卫星源", "先选桌面、再选显示器，最后选择卫星", "检测虚拟桌面"],
+            ["Current Earth Wallpaper · v1.1 beta", "Satellite source", "Wallpaper size", "Interface language", "Update interval (minutes)", "Show tray icon", "Time watermark", "Start updating", "Exit app", "Settings saved. Native image engine is being ported.", "Native image engine isn't ready yet. Keep using the stable build.", "Cannot hide tray: Ctrl+Alt+E is in use.", "Show window", "Image folder", "Start with Windows", "Stop updating", "Updating wallpaper...", "Execution log", "Clear view", "Close window: Yes hides and keeps updating; No quits and stops; Cancel stays.", "Close window", "Save logs to file", "Satellite for each desktop + monitor", "Monitor", "Satellite for this monitor", "Virtual desktop wallpapers (26H2 compatibility)", "Virtual desktop", "Satellite for selected desktop + monitor", "Choose desktop, monitor and satellite", "Check desktops"],
+            ["リアルタイム地球壁紙 · v1.1 ベータ", "衛星ソース", "壁紙の大きさ", "表示言語", "更新間隔（分）", "トレイアイコンを表示", "時刻の透かし", "更新開始", "終了", "設定を保存しました。画像エンジンは移植中です。", "画像エンジンはまだ未完成です。", "トレイを隠せません。Ctrl+Alt+E は使用中です。", "ウィンドウを表示", "画像の保存先", "Windows起動時に自動更新", "更新停止", "壁紙を更新中…", "実行ログ", "表示を消去", "はい：非表示で更新継続。いいえ：終了して更新停止。キャンセル：戻る。", "ウィンドウを閉じる", "ログをファイルに保存", "仮想デスクトップとモニター別に衛星を指定", "モニター", "このモニターの衛星", "仮想デスクトップ別壁紙（26H2対応）", "仮想デスクトップ", "選択デスクトップ＋モニターの衛星", "デスクトップとモニターから衛星を選択", "デスクトップ検出"],
+            ["실시간 지구 배경화면 · v1.1 베타", "위성 소스", "배경화면 크기", "인터페이스 언어", "갱신 간격(분)", "트레이 아이콘 표시", "시간 워터마크", "업데이트 시작", "종료", "설정 저장됨. 이미지 엔진을 이식하는 중입니다.", "이미지 엔진이 아직 준비되지 않았습니다.", "트레이 숨기기 불가: Ctrl+Alt+E 사용 중.", "창 표시", "이미지 저장 폴더", "Windows 시작 시 자동 업데이트", "업데이트 중지", "배경화면 갱신 중…", "실행 로그", "보기 지우기", "예: 숨기고 계속 업데이트. 아니요: 종료 및 중지. 취소: 돌아가기.", "창 닫기", "실행 로그 파일에 저장", "데스크톱과 모니터별로 위성 선택", "모니터", "이 모니터의 위성", "가상 데스크톱별 배경화면 (26H2 호환)", "가상 데스크톱", "선택 데스크톱＋모니터의 위성", "데스크톱과 모니터를 선택한 후 위성 지정", "바탕 화면 감지"],
         ];
         DICT[lang.min(3)][key.min(29)]
     }
@@ -109,11 +108,9 @@ mod winapp {
         file_log_checkbox:usize,
         monitor_enabled:usize,
         monitor_picker:usize,
-        monitor_source:usize,
         monitor_picker_label:usize,
-        monitor_source_label:usize,
+        monitor_probe:usize,
         monitors:Vec<crate::monitor::Monitor>,
-        vdesk_enabled:usize,
         vdesk_picker:usize,
         vdesk_source:usize,
         vdesk_label:usize,
@@ -174,6 +171,11 @@ mod winapp {
     impl Ui {
         unsafe fn new(hwnd: HWND) -> Self {
             let mut cfg = config::load();
+            // Upgrade either legacy dimension into the unified pair mode.
+            if cfg.per_monitor_enabled || cfg.virtual_desktops_enabled {
+                cfg.per_monitor_enabled=true;
+                cfg.virtual_desktops_enabled=true;
+            }
             let hotkey = RegisterHotKey(hwnd, HOTKEY_ID, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, b'E' as u32) != 0;
             if !hotkey { cfg.show_tray_icon = true; }
             if cfg.save_path.is_empty(){cfg.save_path=config::app_dir().join("wallpapers").to_string_lossy().into_owned();}
@@ -212,44 +214,35 @@ mod winapp {
                 Ok(v)=>(v,None),
                 Err(e)=>(Vec::new(),Some(e)),
             };
-            let monitor_enabled=control(hwnd,"BUTTON","",24,389,416,26,
-                BS_AUTOCHECKBOX as u32,ID_MULTI_MONITOR);
-            check(monitor_enabled,cfg.per_monitor_enabled);
-            let monitor_picker_label=control(hwnd,"STATIC","",24,427,175,25,0,0);
-            let monitor_source_label=control(hwnd,"STATIC","",24,465,175,25,0,0);
-            let monitor_picker=control(hwnd,"COMBOBOX","",210,424,230,160,combo_style,ID_MONITOR_PICKER);
-            let monitor_source=control(hwnd,"COMBOBOX","",210,462,230,200,combo_style,ID_MONITOR_SOURCE);
-            for (i,m) in monitors.iter().enumerate() {
-                let caption=format!("{} — {}×{}",i+1,m.width,m.height);
-                SendMessageW(monitor_picker,CB_ADDSTRING,0,w(&caption).as_ptr() as LPARAM);
-            }
-            if !monitors.is_empty(){SendMessageW(monitor_picker,CB_SETCURSEL,0,0);}
-            let selected_source=monitors.first().and_then(|m|cfg.monitor_sources.get(&m.id))
-                .unwrap_or(&cfg.image_source);
-            choose(monitor_source,&SOURCES,SOURCES.iter().position(|v|v==selected_source).unwrap_or(0));
+            let monitor_enabled=control(hwnd,"BUTTON","",24,389,416,26,BS_AUTOCHECKBOX as u32,ID_MULTI_MONITOR);
+            check(monitor_enabled,cfg.per_monitor_enabled && cfg.virtual_desktops_enabled);
             let (vdesks,active_vdesk,vdesk_warning)=match crate::virtual_desktop::snapshot(){
                 Ok(snapshot)=>(snapshot.ids,snapshot.current,None),
                 Err(e)=>(Vec::new(),None,Some(e)),
             };
-            let vdesk_enabled=control(hwnd,"BUTTON","",24,506,416,26,
-                BS_AUTOCHECKBOX as u32,ID_VDESK_ENABLED);
-            check(vdesk_enabled,cfg.virtual_desktops_enabled);
-            let vdesk_label=control(hwnd,"STATIC","",24,545,185,24,0,0);
-            let vdesk_source_label=control(hwnd,"STATIC","",24,582,185,24,0,0);
-            let vdesk_picker=control(hwnd,"COMBOBOX","",210,540,230,170,combo_style,ID_VDESK_PICKER);
-            let vdesk_source=control(hwnd,"COMBOBOX","",210,579,230,170,combo_style,ID_VDESK_SOURCE);
+            let vdesk_label=control(hwnd,"STATIC","",24,427,185,24,0,0);
+            let vdesk_picker=control(hwnd,"COMBOBOX","",210,425,230,160,combo_style,ID_VDESK_PICKER);
             for (i,_) in vdesks.iter().enumerate(){
-                let caption=format!("Desktop {}",i+1);
-                SendMessageW(vdesk_picker,CB_ADDSTRING,0,w(&caption).as_ptr() as LPARAM);
+                SendMessageW(vdesk_picker,CB_ADDSTRING,0,w(&format!("Desktop {}",i+1)).as_ptr() as LPARAM);
             }
-            let active_idx=active_vdesk.as_ref().and_then(|v|vdesks.iter().position(|x|x==v))
-                .unwrap_or(0);
+            let active_idx=active_vdesk.as_ref().and_then(|v|vdesks.iter().position(|x|x==v)).unwrap_or(0);
             if !vdesks.is_empty(){SendMessageW(vdesk_picker,CB_SETCURSEL,active_idx,0);}
-            let initial_source=vdesks.get(active_idx).and_then(|v|cfg.virtual_desktop_sources.get(v))
-                .unwrap_or(&cfg.image_source);
+            let monitor_picker_label=control(hwnd,"STATIC","",24,470,185,24,0,0);
+            let monitor_picker=control(hwnd,"COMBOBOX","",210,467,230,160,combo_style,ID_MONITOR_PICKER);
+            for (i,m) in monitors.iter().enumerate(){
+                SendMessageW(monitor_picker,CB_ADDSTRING,0,w(&format!("{} — {}×{}",i+1,m.width,m.height)).as_ptr() as LPARAM);
+            }
+            if !monitors.is_empty(){SendMessageW(monitor_picker,CB_SETCURSEL,0,0);}
+            let vdesk_source_label=control(hwnd,"STATIC","",24,511,185,24,0,0);
+            let vdesk_source=control(hwnd,"COMBOBOX","",210,507,230,180,combo_style,ID_VDESK_SOURCE);
+            let initial_source=match (vdesks.get(active_idx),monitors.first()){
+                (Some(id),Some(m))=>crate::virtual_cycle::source_for_pair(&cfg,id,&m.id),
+                _=>cfg.image_source.as_str(),
+            };
             choose(vdesk_source,&SOURCES,SOURCES.iter().position(|x|*x==initial_source).unwrap_or(0));
-            let vdesk_hint=control(hwnd,"STATIC","",24,616,288,24,0,0);
-            let vdesk_probe=control(hwnd,"BUTTON","",318,610,122,30,BS_PUSHBUTTON as u32,ID_VDESK_PROBE);
+            let vdesk_probe=control(hwnd,"BUTTON","",24,551,194,30,BS_PUSHBUTTON as u32,ID_VDESK_PROBE);
+            let monitor_probe=control(hwnd,"BUTTON","",230,551,210,30,BS_PUSHBUTTON as u32,ID_MONITOR_PROBE);
+            let vdesk_hint=control(hwnd,"STATIC","",24,592,416,26,0,0);
             let status = control(hwnd, "STATIC", "", 24,659, 416, 28, 0, 0);
             let clear_log = control(hwnd,"BUTTON","",730,24,90,29,BS_PUSHBUTTON as u32,ID_CLEAR_LOG);
             let file_log_checkbox=control(hwnd,"BUTTON","",24,694,410,26,
@@ -268,10 +261,8 @@ mod winapp {
                 log_area: log_area as usize, log_label:log_label as usize,
                 clear_log:clear_log as usize, file_log_checkbox:file_log_checkbox as usize,
                 monitor_enabled:monitor_enabled as usize,monitor_picker:monitor_picker as usize,
-                monitor_source:monitor_source as usize,
-                monitor_picker_label:monitor_picker_label as usize,
-                monitor_source_label:monitor_source_label as usize,monitors,
-                vdesk_enabled:vdesk_enabled as usize,vdesk_picker:vdesk_picker as usize,
+                monitor_picker_label:monitor_picker_label as usize,monitor_probe:monitor_probe as usize,
+                monitors,vdesk_picker:vdesk_picker as usize,
                 vdesk_source:vdesk_source as usize,vdesk_label:vdesk_label as usize,
                 vdesk_source_label:vdesk_source_label as usize,vdesk_hint:vdesk_hint as usize,
                 vdesk_probe:vdesk_probe as usize,vdesk_candidate:None,vdesk_candidate_count:0,
@@ -320,20 +311,12 @@ mod winapp {
             set_text(h(self.file_log_checkbox),lang_text(l,21));
             set_text(h(self.monitor_enabled),lang_text(l,22));
             set_text(h(self.monitor_picker_label),lang_text(l,23));
-            set_text(h(self.monitor_source_label),lang_text(l,24));
-            set_text(h(self.vdesk_enabled),lang_text(l,25));
             set_text(h(self.vdesk_label),lang_text(l,26));
             set_text(h(self.vdesk_source_label),lang_text(l,27));
             set_text(h(self.vdesk_hint),lang_text(l,28));
-            if self.cfg.per_monitor_enabled && self.cfg.virtual_desktops_enabled{
-                set_text(h(self.vdesk_hint),match self.cfg.language_index(){
-                    0=>"双模式：先选虚拟桌面，再选显示器，为组合选择卫星。",
-                    1=>"Dual mode: choose desktop, monitor, then satellite.",
-                    2=>"2つのモード：デスクトップ、モニター、衛星を選択。",
-                    _=>"듀얼 모드: 데스크톱, 모니터, 위성 순으로 선택.",
-                });
-            }
-            set_text(h(self.vdesk_probe),lang_text(l,29));
+            set_text(h(self.monitor_probe),match l{
+                0=>"检测显示器",1=>"Detect displays",2=>"モニターを検出",_=>"모니터 감지",
+            });
         }
         unsafe fn tray_data(&self) -> NOTIFYICONDATAW {
             let mut data: NOTIFYICONDATAW = std::mem::zeroed();
@@ -361,9 +344,10 @@ mod winapp {
             self.cfg.language = LANGUAGES[selected(h(self.language)).min(LANGUAGES.len()-1)].into();
             self.cfg.watermark_on = checked(h(self.watermark));
             self.cfg.log_to_file = checked(h(self.file_log_checkbox));
-            self.cfg.per_monitor_enabled = checked(h(self.monitor_enabled));
+            let combined=checked(h(self.monitor_enabled));
+            self.cfg.per_monitor_enabled=combined;
             let was_vdesk_enabled=self.cfg.virtual_desktops_enabled;
-            self.cfg.virtual_desktops_enabled=checked(h(self.vdesk_enabled));
+            self.cfg.virtual_desktops_enabled=combined;
             if was_vdesk_enabled!=self.cfg.virtual_desktops_enabled{
                 self.append_event(format!("虚拟桌面模式已{}；已识别 {} 个桌面；当前：{}",if self.cfg.virtual_desktops_enabled{"开启"}else{"关闭"},self.vdesks.len(),self.active_vdesk.as_deref().unwrap_or("未知")));
                 self.vdesk_candidate=None;
