@@ -26,15 +26,37 @@ fn meta_valid(path:&Path,source:&str)->bool {
         .and_then(|b|serde_json::from_slice::<Meta>(&b).ok())
         .is_some_and(|m|m.source==source)
 }
+/// Verify actual BMP geometry and expected payload size before reusing it.
+/// Changing resolution / DPI / rotation otherwise leaves an old-sized image
+/// marked fresh for the entire refresh interval.
+fn bitmap_geometry_matches(path:&Path,monitor:Option<&Monitor>)->bool{
+    use std::io::Read;
+    let Some(m)=monitor else{return path.is_file();};
+    let Ok(mut file)=fs::File::open(path) else{return false;};
+    let mut header=[0u8;54];
+    if file.read_exact(&mut header).is_err()||&header[0..2]!=b"BM"{return false;}
+    let width=u32::from_le_bytes(header[18..22].try_into().unwrap());
+    let height=u32::from_le_bytes(header[22..26].try_into().unwrap());
+    let bpp=u16::from_le_bytes(header[28..30].try_into().unwrap());
+    if width!=m.width || height!=m.height || bpp!=32 {return false;}
+    let Some(size)=width.checked_mul(height)
+        .and_then(|pixels|pixels.checked_mul(4))
+        .map(u64::from) else{return false;};
+    file.metadata().is_ok_and(|meta|meta.len()>=54+size)
+}
 /// Cached stable BMP for one pair, regardless of age. Used only for fast
 /// reapplication after switching virtual desktops: never fetch network data.
 pub fn cached_pair(folder:&Path,id:&str,monitor:&Monitor,source:&str)->Option<PathBuf>{
     let path=target(folder,Some(id),Some(monitor));
-    if path.is_file() && meta_valid(&path,source){Some(path)}else{None}
+    if path.is_file() && meta_valid(&path,source) && bitmap_geometry_matches(&path,Some(monitor)){
+        Some(path)
+    }else{None}
 }
 pub fn recent(folder:&Path,id:&str,monitor:Option<&Monitor>,source:&str,minutes:u32)->Option<PathBuf>{
     let bmp=target(folder,Some(id),monitor);
-    if !bmp.is_file()||!meta_valid(&bmp,source){return None;}
+    if !bmp.is_file() || !meta_valid(&bmp,source) || !bitmap_geometry_matches(&bmp,monitor){
+        return None;
+    }
     let age=fs::metadata(&bmp).ok()?.modified().ok()?.elapsed().ok()?;
     (age<Duration::from_secs(minutes as u64*60)).then_some(bmp)
 }
@@ -49,7 +71,9 @@ pub fn restore(folder:&Path,id:&str,monitor:Option<&Monitor>,source:&str,cancel:
     // In the virtual-desktop-only mode a single physical display may have an
     // explicit fixed BMP path. The private COM method still targets the desktop.
     let bmp=target(folder,Some(id),monitor);
-    if !bmp.is_file() || !meta_valid(&bmp,source){return Err("No matching saved wallpaper".into())}
+    if !bmp.is_file() || !meta_valid(&bmp,source) || !bitmap_geometry_matches(&bmp,monitor){
+        return Err("Saved wallpaper dimensions or source are stale".into());
+    }
     virtual_wallpaper::assign(id,&bmp)?;
     Ok(bmp)
 }
@@ -120,6 +144,31 @@ mod tests{
             e.path().extension().is_some_and(|x|x=="bmp")
         ).count();
         assert_eq!(count,1,"Only one wallpaper BMP per pair");
+        fs::remove_dir_all(folder).unwrap();
+    }
+    #[test]fn monitor_geometry_invalidates_stale_bmp(){
+        let folder=std::env::temp_dir().join(format!("cew-geometry-{}-{:?}",
+            std::process::id(),std::thread::current().id()));
+        fs::create_dir_all(&folder).unwrap();
+        let image=folder.join("source.bmp");
+        let width=400u32;let height=300u32;
+        let mut bytes=vec![0u8;54+(width*height*4) as usize];
+        bytes[0..2].copy_from_slice(b"BM");
+        bytes[18..22].copy_from_slice(&width.to_le_bytes());
+        bytes[22..26].copy_from_slice(&height.to_le_bytes());
+        bytes[28..30].copy_from_slice(&32u16.to_le_bytes());
+        fs::write(&image,&bytes).unwrap();
+        let desk="12345678-1234-1234-1234-123456789abc";
+        let screen=Monitor{id:"MON".into(),width,height};
+        let path=save(&folder,Some(desk),Some(&screen),"GOES-East",&image).unwrap();
+        assert!(bitmap_geometry_matches(&path,Some(&screen)));
+        assert!(recent(&folder,desk,Some(&screen),"GOES-East",30).is_some());
+        let changed=Monitor{id:"MON".into(),width:512,height:300};
+        assert!(!bitmap_geometry_matches(&path,Some(&changed)));
+        assert!(recent(&folder,desk,Some(&changed),"GOES-East",30).is_none());
+        assert!(cached_pair(&folder,desk,&changed,"GOES-East").is_none());
+        // Preserve the original image on disk until a proper-sized render finishes.
+        assert!(path.exists());
         fs::remove_dir_all(folder).unwrap();
     }
     #[test]fn one_path_per_pair_even_as_source_changes(){
