@@ -4,3 +4,5 @@ Intentionally UN-SIGNED, per user's explicit request.
 Build, test, package and release from this exact Rust branch commit.
 
 Release pipeline retry #2: standard non-fatal Clippy warnings; all tests and release build enforced.
+
+Release retry #3: corrected GH_TOKEN/GH_REPO environment interpolation; build and publish unsigned.
