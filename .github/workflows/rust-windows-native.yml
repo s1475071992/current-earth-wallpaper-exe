@@ -47,6 +47,17 @@ jobs:
             Get-Content "target/release/live-goes.json" | Write-Host
           }
           if ($p.ExitCode -ne 0) { throw "At least one GOES endpoint was unreachable or returned undecodable image" }
+      - name: FY4B HTTPS transport and image decode probe
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $p = Start-Process -FilePath "target/release/CurrentEarthWallpaperNative.exe" -ArgumentList "--self-test-fy4b-https" -PassThru -Wait
+          if (Test-Path "target/release/fy4b-https.json") {
+            Get-Content "target/release/fy4b-https.json" | Write-Host
+          }
+          if ($p.ExitCode -ne 0) { throw "FY4B HTTPS endpoint unavailable or WIC decode failed - investigate before stable release" }
+      - name: Cargo clippy static analysis
+        run: cargo clippy --all-targets
       - name: Read-only virtual desktop registry diagnostic
         shell: pwsh
         run: |
@@ -127,6 +138,7 @@ jobs:
             rust-native/target/release/memory-idle.json
             rust-native/target/release/memory-render.json
             rust-native/target/release/live-goes.json
+            rust-native/target/release/fy4b-https.json
             rust-native/target/release/virtual-desktop-probe.json
           retention-days: 30
           if-no-files-found: error
