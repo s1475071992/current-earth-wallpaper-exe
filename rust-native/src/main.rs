@@ -492,7 +492,33 @@ mod winapp {
 }
 
 #[cfg(windows)]
+fn live_goes_probe(){
+    let mut results=Vec::new();
+    let mut failures=0u32;
+    for sat in ["GOES-East","GOES-West"] {
+        let url=sources::goes_cdn_urls(sat).unwrap()[1].clone();
+        let tmp=std::env::temp_dir().join(format!("cew-probe-{}-{}.jpg",std::process::id(),sat));
+        let start=std::time::Instant::now();
+        let result=http::download(&url,&tmp,12*1048576).and_then(|_|{
+            let decoded=imaging::load_scaled(&tmp,300,None)?;
+            Ok(format!("decoded {}x{}",decoded.width,decoded.height))
+        });
+        let _=std::fs::remove_file(tmp);
+        if result.is_err(){failures+=1;}
+        results.push(serde_json::json!({
+            "source":sat, "url":url, "ok":result.is_ok(),
+            "result":result.unwrap_or_else(|e|e),
+            "elapsed_seconds":start.elapsed().as_secs_f32(),
+        }));
+    }
+    let path=std::env::current_exe().unwrap().parent().unwrap().join("live-goes.json");
+    let _=std::fs::write(path,serde_json::to_vec_pretty(&results).unwrap());
+    if failures!=0 {std::process::exit(2);}
+}
+
+#[cfg(windows)]
 fn main() {
+    if std::env::args().any(|arg|arg=="--self-test-goes") {live_goes_probe();return;}
     if std::env::args().any(|arg|arg=="--self-test-render"){
         let p=std::env::temp_dir().join(format!("cew_test_{}.bmp",std::process::id()));
         let out=std::env::temp_dir().join(format!("cew_render_{}.bmp",std::process::id()));

@@ -38,6 +38,15 @@ jobs:
         run: |
           $p = Start-Process -FilePath "target/release/CurrentEarthWallpaperNative.exe" -ArgumentList "--self-test-render" -NoNewWindow -PassThru -Wait
           if ($p.ExitCode -ne 0) { throw "Offline image rendering test failed with exit $($p.ExitCode)" }
+      - name: Real GOES-East and GOES-West WinHTTP + WIC probe
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $p = Start-Process -FilePath "target/release/CurrentEarthWallpaperNative.exe" -ArgumentList "--self-test-goes" -PassThru -Wait
+          if (Test-Path "target/release/live-goes.json") {
+            Get-Content "target/release/live-goes.json" | Write-Host
+          }
+          if ($p.ExitCode -ne 0) { throw "At least one GOES endpoint was unreachable or returned undecodable image" }
       - name: Idle memory sampling (real Windows process)
         shell: pwsh
         run: |
@@ -70,5 +79,6 @@ jobs:
             rust-native/target/release/SHA256.txt
             rust-native/target/release/memory-idle.json
             rust-native/target/release/memory-render.json
+            rust-native/target/release/live-goes.json
           retention-days: 30
           if-no-files-found: error
