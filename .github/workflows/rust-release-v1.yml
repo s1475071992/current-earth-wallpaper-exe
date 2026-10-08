@@ -21,6 +21,8 @@ jobs:
         shell: pwsh
         run: |
           Push-Location rust-native
+          cargo generate-lockfile
+          if ($LASTEXITCODE -ne 0) { throw "Could not lock dependencies" }
           cargo test --locked
           if ($LASTEXITCODE -ne 0) { throw "Unit tests failed" }
           cargo build --release --locked
