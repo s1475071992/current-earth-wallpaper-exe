@@ -38,7 +38,7 @@ unsafe extern "system" {
     fn CoUninitialize();
     fn CoCreateInstance(cls:*const Guid,outer:Raw,ctx:u32,iid:*const Guid,result:*mut Raw)->i32;
 }
-#[link(name="combase")]
+#[link(name="runtimeobject")]
 unsafe extern "system" {
     fn WindowsCreateString(chars:*const u16,len:u32,out:*mut Raw)->i32;
     fn WindowsDeleteString(raw:Raw)->i32;
