@@ -139,6 +139,7 @@ mod winapp {
         wake:crate::scheduler::WakeGate,
         last_maintenance:Instant,
         display_change_due:Option<Instant>,
+        topology_refresh_pending:bool,
     }
     static UI: OnceLock<Mutex<Ui>> = OnceLock::new();
 
@@ -280,6 +281,7 @@ mod winapp {
                 wake:crate::scheduler::WakeGate::default(),
                 last_maintenance:Instant::now(),
                 display_change_due:None,
+                topology_refresh_pending:false,
             };
             ui.localize();
             ui.sync_pair_source();
@@ -606,6 +608,7 @@ mod winapp {
             if !self.running || self.busy{return;}
 
             self.busy=true;
+            self.topology_refresh_pending=false;
             if self.wake.pending(){self.wake.start_catchup();}
             self.cancel=Arc::new(AtomicBool::new(false));
             if self.cfg.virtual_desktops_enabled{
@@ -789,8 +792,12 @@ mod winapp {
             let incompatible=notice.contains("VIRTUAL_DESKTOP_UNSUPPORTED");
             let seconds=if !success&&!incompatible&&self.failures<=3{60}else{self.cfg.interval_minutes as u64*60};
             self.next_due=if self.wake.pending() && self.running {
-                // The in-flight pre-sleep job finished: run one deferred cycle, not N missed cycles.
                 Instant::now()+crate::scheduler::WAKE_SETTLE
+            }else if self.topology_refresh_pending && self.running {
+                // A monitor was connected/disconnected while the previous
+                // image worker was busy: never lose the pending size refresh.
+                self.topology_refresh_pending=false;
+                Instant::now()+Duration::from_secs(3)
             }else{Instant::now()+Duration::from_secs(seconds)};
             self.append_event(if success{format!("成功：{notice}")}else{format!("失败：{notice}")});
             if self.running{
@@ -951,8 +958,13 @@ mod winapp {
                         // A resolution/orientation change can require re-rendering,
                         // but ordinary desktop switches NEVER cause downloads.
                         if ui.running && !ui.wake.sleeping(){
-                            ui.next_due=Instant::now()+Duration::from_secs(3);
-                            ui.append_event("显示器配置已变化：3秒后验证各壁纸尺寸，必要时后台重新生成，不在桌面切换时下载。".into());
+                            if ui.busy {
+                                ui.topology_refresh_pending=true;
+                                ui.append_event("显示器已变化：当前更新结束后，将校验新分辨率并补一次更新。".into());
+                            }else{
+                                ui.next_due=Instant::now()+Duration::from_secs(3);
+                                ui.append_event("显示器已变化：3秒后校验壁纸尺寸，必要时后台重新生成。".into());
+                            }
                         }
                     }
                     // Desktop switching does not schedule or cancel refreshes.
