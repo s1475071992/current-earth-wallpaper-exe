@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{env, fs, path::PathBuf};
+use std::{env, fs, path::PathBuf, collections::BTreeMap};
 
 pub const SOURCES: [&str; 6] = [
     "风云4B", "GOES-East", "GOES-West", "Himawari-9", "NASA EPIC", "Meteosat (MTG)",
@@ -17,6 +17,9 @@ pub struct AppConfig {
     pub watermark_on: bool,
     pub show_tray_icon: bool,
     pub log_to_file: bool,
+    pub per_monitor_enabled: bool,
+    pub monitor_sources: BTreeMap<String,String>,
+    pub virtual_desktop_sources: BTreeMap<String,String>,
     pub language: String,
 }
 
@@ -30,6 +33,9 @@ impl Default for AppConfig {
             watermark_on: false,
             show_tray_icon: true,
             log_to_file: true,
+            per_monitor_enabled: false,
+            monitor_sources: BTreeMap::new(),
+            virtual_desktop_sources: BTreeMap::new(),
             language: LANGUAGES[0].into(),
         }
     }
@@ -47,6 +53,8 @@ impl AppConfig {
             self.language = LANGUAGES[0].into();
         }
         self.interval_minutes = self.interval_minutes.clamp(1, 1440);
+        self.monitor_sources.retain(|id,source| !id.is_empty() && id.len()<=1024 && SOURCES.contains(&source.as_str()));
+        self.virtual_desktop_sources.retain(|id,source| !id.is_empty() && id.len()<=128 && SOURCES.contains(&source.as_str()));
     }
     pub fn language_index(&self) -> usize {
         LANGUAGES.iter().position(|x| *x == self.language).unwrap_or(0)
@@ -96,6 +104,23 @@ mod tests {
         assert_eq!(config.image_source, "NASA EPIC");
         assert!(!config.show_tray_icon);
         assert_eq!(config.language_index(), 2);
+    }
+    #[test]
+    fn display_profiles_roundtrip_and_validation() {
+        let mut config=AppConfig::default();
+        config.per_monitor_enabled=true;
+        config.monitor_sources.insert("MONITOR_A".into(), "GOES-East".into());
+        config.monitor_sources.insert("MONITOR_B".into(), "Himawari-9".into());
+        config.virtual_desktop_sources.insert("virtual-desktop-guid-1".into(),"NASA EPIC".into());
+        let mut loaded:AppConfig=serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+        loaded.sanitize();
+        assert!(loaded.per_monitor_enabled);
+        assert_eq!(loaded.monitor_sources["MONITOR_A"],"GOES-East");
+        assert_eq!(loaded.monitor_sources["MONITOR_B"],"Himawari-9");
+        assert_eq!(loaded.virtual_desktop_sources["virtual-desktop-guid-1"],"NASA EPIC");
+        loaded.monitor_sources.insert("broken".into(),"not a satellite".into());
+        loaded.sanitize();
+        assert!(!loaded.monitor_sources.contains_key("broken"));
     }
     #[test]
     fn file_logging_backward_compatibility_and_persistence() {

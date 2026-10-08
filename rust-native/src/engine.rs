@@ -4,8 +4,14 @@ use std::{
     sync::atomic::{AtomicBool,Ordering},
     time::{Instant,SystemTime,UNIX_EPOCH},
 };
-use crate::{config::{AppConfig,app_dir},http,imaging,sources::{self,SourceKind},wallpaper};
+use crate::{config::{AppConfig,app_dir},http,imaging,sources::{self,SourceKind},wallpaper,monitor::Monitor};
 
+fn display_hash(input:&str)->u64{
+    // Stable non-cryptographic device identifier for generated file names.
+    let mut value:u64=0xcbf29ce484222325;
+    for b in input.bytes(){value^=b as u64; value=value.wrapping_mul(0x100000001b3);}
+    value
+}
 struct Scratch(Vec<PathBuf>);
 impl Scratch {
     fn new()->Self{Self(Vec::new())}
@@ -41,6 +47,9 @@ fn download_image<F:FnMut(String)>(
     check(cancel)
 }
 pub fn run_once(cfg:&AppConfig,cancel:&AtomicBool,mut log:impl FnMut(String))->Result<PathBuf,String>{
+    run_once_for(cfg,None,cancel,&mut log)
+}
+pub fn run_once_for(cfg:&AppConfig,display:Option<&Monitor>,cancel:&AtomicBool,mut log:impl FnMut(String))->Result<PathBuf,String>{
     let begin=Instant::now();
     let folder=if cfg.save_path.trim().is_empty(){app_dir().join("wallpapers")}
         else{PathBuf::from(&cfg.save_path)};
@@ -114,7 +123,7 @@ pub fn run_once(cfg:&AppConfig,cancel:&AtomicBool,mut log:impl FnMut(String))->R
         }
     };
     check(cancel)?;
-    let (w,h)=wallpaper::screen_size()?;
+    let (w,h)=display.map(|d|(d.width,d.height)).map(Ok).unwrap_or_else(wallpaper::screen_size)?;
     let diameter=wallpaper::diameter(h,&cfg.scale_mode).min(w).max(1);
     log(format!("Screen: {w}x{h}; Earth diameter: {diameter}px"));
     let crop=match source.kind {
@@ -129,12 +138,16 @@ pub fn run_once(cfg:&AppConfig,cancel:&AtomicBool,mut log:impl FnMut(String))->R
     log(format!("WIC decode complete ({:.1}s)",started.elapsed().as_secs_f32()));
     check(cancel)?;
     drop(scratch);
-    let path=folder.join(format!("cew-{}-{}.bmp",std::process::id(),stamp()));
+    let key=display.map(|d|format!("-{:016x}",display_hash(&d.id))).unwrap_or_default();
+    let path=folder.join(format!("cew-{}{}-{}.bmp",std::process::id(),key,stamp()));
     log(format!("Compose desktop BMP: {}x{}",w,h));
     wallpaper::compose(&path,w,h,&image,cfg.watermark_on)?;
     check(cancel)?;
     log("Windows: SystemParametersInfoW(SPI_SETDESKWALLPAPER)".into());
-    wallpaper::set_wallpaper(&path)?;
+    match display {
+        Some(d)=>crate::monitor::assign(&d.id,&path)?,
+        None=>wallpaper::set_wallpaper(&path)?,
+    }
     wallpaper::prune_own_wallpapers(&folder,&path,5);
     log(format!("Wallpaper updated successfully in {:.1}s",begin.elapsed().as_secs_f32()));
     Ok(path)

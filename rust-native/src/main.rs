@@ -10,6 +10,7 @@ mod sources;
 #[cfg(windows)] mod engine;
 #[cfg(windows)] mod metrics;
 #[cfg(windows)] mod autostart;
+#[cfg(windows)] mod monitor;
 
 #[cfg(not(windows))]
 fn main() {
@@ -49,6 +50,9 @@ mod winapp {
     const ID_AUTOSTART: u16 = 110;
     const ID_CLEAR_LOG: u16 = 111;
     const ID_FILE_LOG: u16 = 112;
+    const ID_MULTI_MONITOR: u16 = 113;
+    const ID_MONITOR_PICKER: u16 = 114;
+    const ID_MONITOR_SOURCE: u16 = 115;
     const EM_SETSEL:u32=0x00B1; // Edit control selection
     const EM_SCROLLCARET:u32=0x00B7; // Scroll to caret
     const ID_SHOW: u16 = 201;
@@ -66,13 +70,13 @@ mod winapp {
         unsafe { SetWindowTextW(hwnd, w(text).as_ptr()); }
     }
     fn lang_text(lang: usize, key: usize) -> &'static str {
-        const DICT: [[&str; 22]; 4] = [
-            ["实时地球壁纸 · Rust 原生预览", "卫星图源", "壁纸大小", "界面语言", "更新间隔（分钟）", "显示托盘图标", "显示时间水印", "开始更新", "退出程序", "配置已保存。壁纸下载与渲染引擎正在迁移。", "原生引擎尚未完成，请勿替代正式版。", "无法隐藏托盘：Ctrl+Alt+E 已被其他软件占用。", "显示主窗口", "图像保存目录", "开机自动更新", "停止更新", "正在更新壁纸…", "执行日志", "清空显示", "关闭窗口：点击“是”隐藏并继续后台更新；点击“否”彻底退出并停止更新；“取消”留在界面。", "关闭窗口", "将运行日志保存到文件"],
-            ["Current Earth Wallpaper · Rust Native Preview", "Satellite source", "Wallpaper size", "Interface language", "Update interval (minutes)", "Show tray icon", "Time watermark", "Start updating", "Exit app", "Settings saved. Native image engine is being ported.", "Native image engine isn't ready yet. Keep using the stable build.", "Cannot hide tray: Ctrl+Alt+E is in use.", "Show window", "Image folder", "Start with Windows", "Stop updating", "Updating wallpaper...", "Execution log", "Clear view", "Close window: Yes hides and keeps updating; No quits and stops; Cancel stays.", "Close window", "Save logs to file"],
-            ["リアルタイム地球壁紙 · Rust ネイティブ", "衛星ソース", "壁紙の大きさ", "表示言語", "更新間隔（分）", "トレイアイコンを表示", "時刻の透かし", "更新開始", "終了", "設定を保存しました。画像エンジンは移植中です。", "画像エンジンはまだ未完成です。", "トレイを隠せません。Ctrl+Alt+E は使用中です。", "ウィンドウを表示", "画像の保存先", "Windows起動時に自動更新", "更新停止", "壁紙を更新中…", "実行ログ", "表示を消去", "はい：非表示で更新継続。いいえ：終了して更新停止。キャンセル：戻る。", "ウィンドウを閉じる", "ログをファイルに保存"],
-            ["실시간 지구 배경화면 · Rust 네이티브", "위성 소스", "배경화면 크기", "인터페이스 언어", "갱신 간격(분)", "트레이 아이콘 표시", "시간 워터마크", "업데이트 시작", "종료", "설정 저장됨. 이미지 엔진을 이식하는 중입니다.", "이미지 엔진이 아직 준비되지 않았습니다.", "트레이 숨기기 불가: Ctrl+Alt+E 사용 중.", "창 표시", "이미지 저장 폴더", "Windows 시작 시 자동 업데이트", "업데이트 중지", "배경화면 갱신 중…", "실행 로그", "보기 지우기", "예: 숨기고 계속 업데이트. 아니요: 종료 및 중지. 취소: 돌아가기.", "창 닫기", "실행 로그 파일에 저장"],
+        const DICT: [[&str; 25]; 4] = [
+            ["实时地球壁纸 · Rust 原生预览", "卫星图源", "壁纸大小", "界面语言", "更新间隔（分钟）", "显示托盘图标", "显示时间水印", "开始更新", "退出程序", "配置已保存。壁纸下载与渲染引擎正在迁移。", "原生引擎尚未完成，请勿替代正式版。", "无法隐藏托盘：Ctrl+Alt+E 已被其他软件占用。", "显示主窗口", "图像保存目录", "开机自动更新", "停止更新", "正在更新壁纸…", "执行日志", "清空显示", "关闭窗口：点击“是”隐藏并继续后台更新；点击“否”彻底退出并停止更新；“取消”留在界面。", "关闭窗口", "将运行日志保存到文件", "为每台物理显示器分别选择卫星源", "显示器", "该显示器的卫星源"],
+            ["Current Earth Wallpaper · Rust Native Preview", "Satellite source", "Wallpaper size", "Interface language", "Update interval (minutes)", "Show tray icon", "Time watermark", "Start updating", "Exit app", "Settings saved. Native image engine is being ported.", "Native image engine isn't ready yet. Keep using the stable build.", "Cannot hide tray: Ctrl+Alt+E is in use.", "Show window", "Image folder", "Start with Windows", "Stop updating", "Updating wallpaper...", "Execution log", "Clear view", "Close window: Yes hides and keeps updating; No quits and stops; Cancel stays.", "Close window", "Save logs to file", "Different satellite for each monitor", "Monitor", "Satellite for this monitor"],
+            ["リアルタイム地球壁紙 · Rust ネイティブ", "衛星ソース", "壁紙の大きさ", "表示言語", "更新間隔（分）", "トレイアイコンを表示", "時刻の透かし", "更新開始", "終了", "設定を保存しました。画像エンジンは移植中です。", "画像エンジンはまだ未完成です。", "トレイを隠せません。Ctrl+Alt+E は使用中です。", "ウィンドウを表示", "画像の保存先", "Windows起動時に自動更新", "更新停止", "壁紙を更新中…", "実行ログ", "表示を消去", "はい：非表示で更新継続。いいえ：終了して更新停止。キャンセル：戻る。", "ウィンドウを閉じる", "ログをファイルに保存", "モニターごとに衛星を選択", "モニター", "このモニターの衛星"],
+            ["실시간 지구 배경화면 · Rust 네이티브", "위성 소스", "배경화면 크기", "인터페이스 언어", "갱신 간격(분)", "트레이 아이콘 표시", "시간 워터마크", "업데이트 시작", "종료", "설정 저장됨. 이미지 엔진을 이식하는 중입니다.", "이미지 엔진이 아직 준비되지 않았습니다.", "트레이 숨기기 불가: Ctrl+Alt+E 사용 중.", "창 표시", "이미지 저장 폴더", "Windows 시작 시 자동 업데이트", "업데이트 중지", "배경화면 갱신 중…", "실행 로그", "보기 지우기", "예: 숨기고 계속 업데이트. 아니요: 종료 및 중지. 취소: 돌아가기.", "창 닫기", "실행 로그 파일에 저장", "모니터별로 위성 소스 설정", "모니터", "이 모니터의 위성"],
         ];
-        DICT[lang.min(3)][key.min(21)]
+        DICT[lang.min(3)][key.min(24)]
     }
 
     struct Ui {
@@ -92,6 +96,12 @@ mod winapp {
         log_label:usize,
         clear_log:usize,
         file_log_checkbox:usize,
+        monitor_enabled:usize,
+        monitor_picker:usize,
+        monitor_source:usize,
+        monitor_picker_label:usize,
+        monitor_source_label:usize,
+        monitors:Vec<crate::monitor::Monitor>,
         log_lines:VecDeque<String>,
         cancel:Arc<AtomicBool>,
         icon: usize,
@@ -172,13 +182,32 @@ mod winapp {
                 BS_PUSHBUTTON as u32, ID_START);
             let exit = control(hwnd, "BUTTON", "", 245, 348, 195, 35,
                 BS_PUSHBUTTON as u32, ID_EXIT);
-            let status = control(hwnd, "STATIC", "", 24, 393, 312, 28, 0, 0);
-            let clear_log = control(hwnd,"BUTTON","",344,390,96,29,BS_PUSHBUTTON as u32,ID_CLEAR_LOG);
-            let file_log_checkbox=control(hwnd,"BUTTON","",24,425,350,26,
+            let monitors=match crate::monitor::connected() {
+                Ok(v)=>v,
+                Err(_)=>Vec::new(),
+            };
+            let monitor_enabled=control(hwnd,"BUTTON","",24,389,416,26,
+                BS_AUTOCHECKBOX as u32,ID_MULTI_MONITOR);
+            check(monitor_enabled,cfg.per_monitor_enabled);
+            let monitor_picker_label=control(hwnd,"STATIC","",24,427,175,25,0,0);
+            let monitor_source_label=control(hwnd,"STATIC","",24,465,175,25,0,0);
+            let monitor_picker=control(hwnd,"COMBOBOX","",210,424,230,160,combo_style,ID_MONITOR_PICKER);
+            let monitor_source=control(hwnd,"COMBOBOX","",210,462,230,200,combo_style,ID_MONITOR_SOURCE);
+            for (i,m) in monitors.iter().enumerate() {
+                let caption=format!("{} — {}×{}",i+1,m.width,m.height);
+                SendMessageW(monitor_picker,CB_ADDSTRING,0,w(&caption).as_ptr() as LPARAM);
+            }
+            if !monitors.is_empty(){SendMessageW(monitor_picker,CB_SETCURSEL,0,0);}
+            let selected_source=monitors.first().and_then(|m|cfg.monitor_sources.get(&m.id))
+                .unwrap_or(&cfg.image_source);
+            choose(monitor_source,&SOURCES,SOURCES.iter().position(|v|v==selected_source).unwrap_or(0));
+            let status = control(hwnd, "STATIC", "", 24, 509, 312, 28, 0, 0);
+            let clear_log = control(hwnd,"BUTTON","",344,506,96,29,BS_PUSHBUTTON as u32,ID_CLEAR_LOG);
+            let file_log_checkbox=control(hwnd,"BUTTON","",24,541,350,26,
                 BS_AUTOCHECKBOX as u32,ID_FILE_LOG);
             check(file_log_checkbox,cfg.log_to_file);
-            let log_label=control(hwnd,"STATIC","",24,456,200,20,0,0);
-            let log_area=control(hwnd,"EDIT","",24,480,416,230,
+            let log_label=control(hwnd,"STATIC","",24,572,200,20,0,0);
+            let log_area=control(hwnd,"EDIT","",24,596,416,230,
                 WS_BORDER|WS_VSCROLL|ES_MULTILINE as u32|ES_AUTOVSCROLL as u32|ES_READONLY as u32,0);
             let icon = LoadIconW(null_mut(), IDI_APPLICATION);
             let mut ui = Self {
@@ -189,6 +218,10 @@ mod winapp {
                 status: status as usize, icon: icon as usize,
                 log_area: log_area as usize, log_label:log_label as usize,
                 clear_log:clear_log as usize, file_log_checkbox:file_log_checkbox as usize,
+                monitor_enabled:monitor_enabled as usize,monitor_picker:monitor_picker as usize,
+                monitor_source:monitor_source as usize,
+                monitor_picker_label:monitor_picker_label as usize,
+                monitor_source_label:monitor_source_label as usize,monitors,
                 log_lines:VecDeque::new(),
                 cancel:Arc::new(AtomicBool::new(false)),
                 tray_added: false, restore_hotkey: hotkey,
@@ -200,6 +233,7 @@ mod winapp {
             ui.localize();
             ui.update_tray();
             ui.append_event("应用已启动；右上角 × 可以选择后台运行或彻底退出。".into());
+            ui.append_event(format!("当前连接的物理显示器：{} 台",ui.monitors.len()));
             if ui.cfg.log_to_file {
                 ui.append_event(format!("日志文件：{}",config::app_dir().join("logs").join("current.log").display()));
             } else {
@@ -222,6 +256,9 @@ mod winapp {
             set_text(h(self.log_label),lang_text(l,17));
             set_text(h(self.clear_log),lang_text(l,18));
             set_text(h(self.file_log_checkbox),lang_text(l,21));
+            set_text(h(self.monitor_enabled),lang_text(l,22));
+            set_text(h(self.monitor_picker_label),lang_text(l,23));
+            set_text(h(self.monitor_source_label),lang_text(l,24));
         }
         unsafe fn tray_data(&self) -> NOTIFYICONDATAW {
             let mut data: NOTIFYICONDATAW = std::mem::zeroed();
@@ -249,6 +286,7 @@ mod winapp {
             self.cfg.language = LANGUAGES[selected(h(self.language)).min(LANGUAGES.len()-1)].into();
             self.cfg.watermark_on = checked(h(self.watermark));
             self.cfg.log_to_file = checked(h(self.file_log_checkbox));
+            self.cfg.per_monitor_enabled = checked(h(self.monitor_enabled));
             let mut folder=[0u16;2048];
             GetWindowTextW(h(self.path_edit),folder.as_mut_ptr(),folder.len() as i32);
             self.cfg.save_path=String::from_utf16_lossy(&folder).trim_matches('\0').trim().to_string();
@@ -303,6 +341,23 @@ mod winapp {
             }
         }
 
+        unsafe fn save_monitor_source(&mut self){
+            let index=selected(h(self.monitor_picker));
+            if let Some(monitor)=self.monitors.get(index){
+                let source=SOURCES[selected(h(self.monitor_source)).min(SOURCES.len()-1)];
+                self.cfg.monitor_sources.insert(monitor.id.clone(),source.to_string());
+                self.append_event(format!("显示器 {}（{}×{}）：{}",index+1,monitor.width,monitor.height,source));
+                let _=config::save(&self.cfg);
+            }
+        }
+        unsafe fn sync_monitor_source(&mut self){
+            let index=selected(h(self.monitor_picker));
+            if let Some(monitor)=self.monitors.get(index){
+                let src=self.cfg.monitor_sources.get(&monitor.id).unwrap_or(&self.cfg.image_source);
+                let pos=SOURCES.iter().position(|x|*x==src.as_str()).unwrap_or(0);
+                SendMessageW(h(self.monitor_source),CB_SETCURSEL,pos,0);
+            }
+        }
         unsafe fn spawn_job(&mut self) {
             if !self.running||self.busy { return; }
             self.busy=true;
@@ -313,12 +368,30 @@ mod winapp {
             let cancel=self.cancel.clone();
             let hwnd=self.parent;
             std::thread::spawn(move || {
-                let outcome=std::panic::catch_unwind(||crate::engine::run_once(&cfg,&cancel,|line|{
-                    let ptr=Box::into_raw(Box::new(line));
-                    if PostMessageW(h(hwnd),REFRESH_PROGRESS,0,ptr as isize)==0 {
-                        drop(Box::from_raw(ptr));
+                let outcome=std::panic::catch_unwind(||{
+                    let mut report=|line:String|{
+                        let ptr=Box::into_raw(Box::new(line));
+                        if PostMessageW(h(hwnd),REFRESH_PROGRESS,0,ptr as isize)==0 {
+                            drop(Box::from_raw(ptr));
+                        }
+                    };
+                    if cfg.per_monitor_enabled {
+                        let monitors=crate::monitor::connected()?;
+                        if monitors.is_empty(){return Err("No connected displays available".into());}
+                        let mut last=std::path::PathBuf::new();
+                        for (i,m) in monitors.iter().enumerate(){
+                            if cancel.load(Ordering::Relaxed){return Err("Cancelled".into());}
+                            let mut selected_cfg=cfg.clone();
+                            selected_cfg.image_source=cfg.monitor_sources.get(&m.id).cloned()
+                                .unwrap_or_else(||cfg.image_source.clone());
+                            report(format!("Display {} [{}x{}]: {}",i+1,m.width,m.height,selected_cfg.image_source));
+                            last=crate::engine::run_once_for(&selected_cfg,Some(m),&cancel,&mut report)?;
+                        }
+                        Ok(last)
+                    } else {
+                        crate::engine::run_once(&cfg,&cancel,&mut report)
                     }
-                }));
+                });
                 let result=outcome.unwrap_or_else(|_|Err("Worker unexpectedly panicked".into()));
                 let success=result.is_ok();
                 let report=Box::new(match result {
@@ -387,6 +460,12 @@ mod winapp {
                         if let Some(state)=UI.get(){state.lock().unwrap().cancel.store(true,Ordering::Relaxed);}
                         DestroyWindow(hwnd);
                     },
+                    ID_MONITOR_PICKER=>{
+                        if let Some(state)=UI.get(){state.lock().unwrap().sync_monitor_source();}
+                    },
+                    ID_MONITOR_SOURCE=>{
+                        if let Some(state)=UI.get(){state.lock().unwrap().save_monitor_source();}
+                    },
                     ID_CLEAR_LOG=>{
                         if let Some(state)=UI.get(){let mut ui=state.lock().unwrap();ui.log_lines.clear();set_text(h(ui.log_area),"");}
                     },
@@ -405,7 +484,7 @@ mod winapp {
                             }
                         }
                     },
-                    ID_SOURCE | ID_SCALE | ID_LANGUAGE | ID_INTERVAL | ID_PATH | ID_AUTOSTART | ID_TRAY_CHECK | ID_WATERMARK | ID_FILE_LOG => {
+                    ID_SOURCE | ID_SCALE | ID_LANGUAGE | ID_INTERVAL | ID_PATH | ID_AUTOSTART | ID_TRAY_CHECK | ID_WATERMARK | ID_FILE_LOG | ID_MULTI_MONITOR => {
                         if let Some(state) = UI.get() {
                             let mut state = state.lock().unwrap();
                             state.save_changes();
@@ -492,7 +571,7 @@ mod winapp {
             let hwnd = CreateWindowExW(
                 0, cls.as_ptr(), w("Current Earth Wallpaper").as_ptr(),
                 WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE,
-                CW_USEDEFAULT, CW_USEDEFAULT, 480, 785,
+                CW_USEDEFAULT, CW_USEDEFAULT, 480, 900,
                 null_mut(), null_mut(), h_instance, null(),
             );
             if hwnd.is_null() { return; }
