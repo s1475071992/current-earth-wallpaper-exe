@@ -3,7 +3,8 @@
  //! API contract. Never edit desktop registry state or guess an unknown active GUID.
 use windows_sys::Win32::System::{
     Registry::*,
-    Threading::{GetCurrentProcessId,ProcessIdToSessionId},
+    Threading::GetCurrentProcessId,
+    RemoteDesktop::ProcessIdToSessionId,
 };
 use std::ptr::{null,null_mut};
 

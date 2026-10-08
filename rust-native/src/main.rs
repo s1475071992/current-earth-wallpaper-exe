@@ -508,7 +508,7 @@ mod winapp {
             let cancel=self.cancel.clone();
             let hwnd=self.parent;
             std::thread::spawn(move || {
-                let outcome=std::panic::catch_unwind(||{
+                let outcome=std::panic::catch_unwind(|| -> Result<std::path::PathBuf,String> {
                     let mut report=|line:String|{
                         let ptr=Box::into_raw(Box::new(line));
                         if PostMessageW(h(hwnd),REFRESH_PROGRESS,0,ptr as isize)==0 {
