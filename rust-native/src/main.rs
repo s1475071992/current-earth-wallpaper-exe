@@ -477,6 +477,27 @@ mod winapp {
                 Err(e)=>self.append_event(format!("检测显示器失败：{e}")),
             }
         }
+        unsafe fn refresh_desktop_list(&mut self,ids:&[String],current:Option<&str>){
+            if self.vdesks==ids{return;}
+            // Preserve the user's selected configuration row when Windows adds
+            // or deletes desktops; do not silently reset the selector to Desktop 1.
+            let previous=self.selected_vdesk();
+            self.vdesks=ids.to_vec();
+            SendMessageW(h(self.vdesk_picker),CB_RESETCONTENT,0,0);
+            for (i,_) in ids.iter().enumerate(){
+                SendMessageW(h(self.vdesk_picker),CB_ADDSTRING,0,
+                    w(&format!("Desktop {}",i+1)).as_ptr() as LPARAM);
+            }
+            if !ids.is_empty(){
+                let index=previous.as_deref()
+                    .and_then(|v|ids.iter().position(|id|id==v))
+                    .or_else(||current.and_then(|v|ids.iter().position(|id|id==v)))
+                    .unwrap_or(0);
+                SendMessageW(h(self.vdesk_picker),CB_SETCURSEL,index,0);
+                self.sync_pair_source();
+            }
+            self.append_event(format!("虚拟桌面列表已刷新，共 {} 个；已保留当前配置选择。",ids.len()));
+        }
         unsafe fn report_virtual_desktops(&mut self){
             self.append_event(format!("设置：虚拟桌面模式={}；物理多显示器模式={}；后台更新={}",
                 self.cfg.virtual_desktops_enabled,self.cfg.per_monitor_enabled,self.running));
@@ -497,6 +518,7 @@ mod winapp {
             });
             match crate::virtual_desktop::snapshot(){
                 Ok(snap)=>{
+                    self.refresh_desktop_list(&snap.ids,snap.current.as_deref());
                     self.append_event(format!("检测结果：{} 个虚拟桌面；当前 GUID={}；来源={}",
                         snap.ids.len(),snap.current.as_deref().unwrap_or("未知"),snap.source));
                     for (i,id) in snap.ids.iter().enumerate(){
@@ -540,15 +562,7 @@ mod winapp {
             self.vdesk_heartbeat=Instant::now();
             match crate::virtual_desktop::snapshot(){
                 Ok(snap)=>{
-                    if self.vdesks!=snap.ids{
-                        self.vdesks=snap.ids;
-                        SendMessageW(h(self.vdesk_picker),CB_RESETCONTENT,0,0);
-                        for (i,_) in self.vdesks.iter().enumerate(){
-                            SendMessageW(h(self.vdesk_picker),CB_ADDSTRING,0,
-                                w(&format!("Desktop {}",i+1)).as_ptr() as LPARAM);
-                        }
-                        self.append_event(format!("虚拟桌面列表已更新：{} 个（下次定时周期自动覆盖全部）。",self.vdesks.len()));
-                    }
+                    self.refresh_desktop_list(&snap.ids,snap.current.as_deref());
                     if self.active_vdesk!=snap.current{
                         // Explorer's registry desktop GUID can be briefly stale.
                         // Confirm twice before changing a physical monitor's wallpaper.
