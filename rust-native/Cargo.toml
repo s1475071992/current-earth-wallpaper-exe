@@ -1,0 +1,29 @@
+[package]
+name = "current-earth-wallpaper-native"
+version = "0.1.0"
+edition = "2021"
+description = "Low-memory Windows-native Current Earth Wallpaper (Rust port)"
+license = "MIT"
+
+[[bin]]
+name = "CurrentEarthWallpaperNative"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_System_LibraryLoader",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Shell",
+  "Win32_UI_Input_KeyboardAndMouse",
+] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
