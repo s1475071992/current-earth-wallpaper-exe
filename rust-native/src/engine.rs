@@ -1,10 +1,47 @@
 //! End-to-end provider pipeline. Per-stage events are sent to the GUI and a local log.
 use std::{
     path::{Path, PathBuf}, fs,
+    collections::{HashMap,HashSet},
     sync::atomic::{AtomicBool,Ordering},
     time::{Instant,SystemTime,UNIX_EPOCH},
 };
 use crate::{config::{AppConfig,app_dir},http,imaging,sources::{self,SourceKind},wallpaper,monitor::Monitor};
+
+/// A shared raw satellite image is kept only when the same satellite occurs
+/// in multiple desktop/monitor pairs in this scheduled cycle. Each monitor
+/// still gets its own differently-sized rendered BMP, but repeated network
+/// downloads (including 16 Himawari tiles) are avoided.
+pub struct CycleSourceCache{
+    repeated:HashSet<String>,
+    images:HashMap<String,PathBuf>,
+}
+impl CycleSourceCache{
+    pub fn for_sources<'a>(sources:impl IntoIterator<Item=&'a str>)->Self{
+        let mut counts=HashMap::<String,usize>::new();
+        for source in sources{*counts.entry(source.to_string()).or_default()+=1;}
+        Self{
+            repeated:counts.into_iter().filter_map(|(name,n)|
+                (n>1).then_some(name)).collect(),
+            images:HashMap::new(),
+        }
+    }
+    fn find(&self,source:&str)->Option<&PathBuf>{self.images.get(source)}
+    fn store(&mut self,source:&str,input:&Path,folder:&Path)->Result<(),String>{
+        if !self.repeated.contains(source)||self.images.contains_key(source){return Ok(());}
+        let suffix=input.extension().and_then(|e|e.to_str()).unwrap_or("img");
+        let filename=format!(".cew-{}-cycle-{}-{}.{}",
+            std::process::id(),stamp(),self.images.len(),suffix);
+        let path=folder.join(filename);
+        fs::copy(input,&path).map_err(|e|format!("Satellite cycle cache copy: {e}"))?;
+        self.images.insert(source.into(),path);
+        Ok(())
+    }
+}
+impl Drop for CycleSourceCache{
+    fn drop(&mut self){
+        for path in self.images.values(){let _=fs::remove_file(path);}
+    }
+}
 
 fn display_hash(input:&str)->u64{
     // Stable non-cryptographic device identifier for generated file names.
@@ -59,12 +96,17 @@ pub fn run_once_for(cfg:&AppConfig,display:Option<&Monitor>,cancel:&AtomicBool,m
 /// without changing Windows wallpaper. The switch handler exclusively decides
 /// when images are shown on a physical monitor.
 pub fn render_pair(cfg:&AppConfig,desktop:&str,display:&Monitor,cancel:&AtomicBool,log:impl FnMut(String))->Result<PathBuf,String>{
-    run_once_impl(cfg,Some(display),Some(desktop),true,cancel,log)
+    run_once_impl(cfg,Some(display),Some(desktop),true,None,cancel,log)
+}
+pub fn render_pair_cached(cfg:&AppConfig,desktop:&str,display:&Monitor,cache:&mut CycleSourceCache,
+    cancel:&AtomicBool,log:impl FnMut(String))->Result<PathBuf,String>{
+    run_once_impl(cfg,Some(display),Some(desktop),true,Some(cache),cancel,log)
 }
 pub fn run_once_for_in_desktop(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,cancel:&AtomicBool,log:impl FnMut(String))->Result<PathBuf,String>{
-    run_once_impl(cfg,display,desktop,false,cancel,log)
+    run_once_impl(cfg,display,desktop,false,None,cancel,log)
 }
-fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,render_only:bool,cancel:&AtomicBool,mut log:impl FnMut(String))->Result<PathBuf,String>{
+fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,render_only:bool,
+    mut source_cache:Option<&mut CycleSourceCache>,cancel:&AtomicBool,mut log:impl FnMut(String))->Result<PathBuf,String>{
     let begin=Instant::now();
     let folder=if cfg.save_path.trim().is_empty(){app_dir().join("wallpapers")}
         else{PathBuf::from(&cfg.save_path)};
@@ -73,7 +115,13 @@ fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,re
     log(format!("Start update: {} | interval={} minutes",source.name,cfg.interval_minutes));
     log(format!("Output folder: {}",folder.display()));
     let mut scratch=Scratch::new();
-    let input=match source.kind {
+    let cached_input=source_cache.as_deref()
+        .and_then(|cache|cache.find(source.name)).cloned();
+    let fresh_download=cached_input.is_none();
+    let input=if let Some(path)=cached_input {
+        log(format!("复用本周期已下载的 {} 原图（不再次发起网络请求）。",source.name));
+        path
+    }else{match source.kind {
         SourceKind::Direct | SourceKind::Goes | SourceKind::Epic | SourceKind::Wms => {
             let image_path=temp_file(&folder,"download.jpg",&mut scratch);
             match source.kind {
@@ -136,7 +184,7 @@ fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,re
             drop(bgra);
             output
         }
-    };
+    }};
     check(cancel)?;
     let (w,h)=display.map(|d|(d.width,d.height)).map(Ok).unwrap_or_else(wallpaper::screen_size)?;
     let diameter=wallpaper::diameter(h,&cfg.scale_mode).min(w).max(1);
@@ -152,6 +200,13 @@ fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,re
         .map_err(|e|format!("WIC image decode failed: {e}"))?;
     log(format!("WIC decode complete ({:.1}s)",started.elapsed().as_secs_f32()));
     check(cancel)?;
+    // Cache only validated original satellite files and only sources used by
+    // multiple profiles in this cycle. Per-pair rendering remains independent.
+    if fresh_download {
+        if let Some(cache)=source_cache.as_deref_mut(){
+            cache.store(source.name,&input,&folder)?;
+        }
+    }
     // Render to a throwaway scratch path. Publish a stable per-desktop+monitor
     // file only after the image is completely written.
     let path=temp_file(&folder,"render.bmp",&mut scratch);
@@ -202,5 +257,31 @@ fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,re
         }
         log(format!("Wallpaper updated in {:.1}s",begin.elapsed().as_secs_f32()));
         Ok(stable)
+    }
+}
+
+#[cfg(test)]
+mod cycle_cache_tests {
+    use super::*;
+    #[test]fn same_source_reused_and_temp_files_cleaned(){
+        let dir=std::env::temp_dir().join(format!("cew-cycle-cache-{}",std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let src=dir.join("input.jpg");
+        fs::write(&src,b"mock satellite bytes").unwrap();
+        let saved;
+        {
+            let mut cache=CycleSourceCache::for_sources(["GOES-East","GOES-East","NASA EPIC"]);
+            assert!(cache.repeated.contains("GOES-East"));
+            assert!(!cache.repeated.contains("NASA EPIC"));
+            cache.store("GOES-East",&src,&dir).unwrap();
+            saved=cache.find("GOES-East").unwrap().clone();
+            assert!(saved.exists());
+            cache.store("GOES-East",&src,&dir).unwrap();
+            assert_eq!(cache.images.len(),1);
+            cache.store("NASA EPIC",&src,&dir).unwrap();
+            assert_eq!(cache.images.len(),1);
+        }
+        assert!(!saved.exists());
+        fs::remove_dir_all(dir).unwrap();
     }
 }
