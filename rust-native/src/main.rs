@@ -48,6 +48,8 @@ mod winapp {
     const ID_PATH: u16 = 109;
     const ID_AUTOSTART: u16 = 110;
     const ID_CLEAR_LOG: u16 = 111;
+    const EM_SETSEL:u32=0x00B1; // Edit control selection
+    const EM_SCROLLCARET:u32=0x00B7; // Scroll to caret
     const ID_SHOW: u16 = 201;
     const TIMER_ID:usize=1;
     const REFRESH_DONE:u32=WM_APP+2;
