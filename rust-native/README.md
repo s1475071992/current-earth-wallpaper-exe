@@ -31,3 +31,11 @@ GitHub Actions uses Windows 2022 with automated Rust unit tests, native offline 
 ## 日志写入开关 / File log setting
 
 The **Save logs to file** checkbox is stored in the JSON configuration as `log_to_file` (defaults to `true` for backward compatibility). When disabled, the scrolling in-memory execution log remains visible, but no new file writes or log rotation take place. Existing log files are left untouched. The setting persists after restart, and all four UI languages have a translation.
+
+## Physical monitors
+
+Enable **Different satellite for each monitor**, select a monitor and its source in two dropdowns. Configuration stores monitor device path → source. Every refresh enumerates attached monitors through IDesktopWallpaper, renders the selected satellite at native display resolution, and assigns the file through IDesktopWallpaper::SetWallpaper. Processing is sequential to limit memory. Monitors without mappings use the default source. Enumeration failures are reported rather than silently writing a global wallpaper.
+
+## Windows virtual desktops
+
+The JSON configuration reserves virtual_desktop_sources (virtual desktop GUID → satellite source), but automatic per-virtual-desktop wallpaper assignment is NOT yet available. Microsoft's public IVirtualDesktopManager does not expose a virtual desktop wallpaper setter. Private Explorer COM methods are Windows build-dependent; simultaneous per-monitor and per-virtual-desktop wallpapers can conflict even in Windows 11. The app does not expose an inert virtual desktop toggle. Target OS version/build (winver) is required to implement and verify a compatible adapter.

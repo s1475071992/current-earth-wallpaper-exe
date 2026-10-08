@@ -182,9 +182,9 @@ mod winapp {
                 BS_PUSHBUTTON as u32, ID_START);
             let exit = control(hwnd, "BUTTON", "", 245, 348, 195, 35,
                 BS_PUSHBUTTON as u32, ID_EXIT);
-            let monitors=match crate::monitor::connected() {
-                Ok(v)=>v,
-                Err(_)=>Vec::new(),
+            let (monitors,monitor_warning)=match crate::monitor::connected() {
+                Ok(v)=>(v,None),
+                Err(e)=>(Vec::new(),Some(e)),
             };
             let monitor_enabled=control(hwnd,"BUTTON","",24,389,416,26,
                 BS_AUTOCHECKBOX as u32,ID_MULTI_MONITOR);
@@ -234,6 +234,7 @@ mod winapp {
             ui.update_tray();
             ui.append_event("应用已启动；右上角 × 可以选择后台运行或彻底退出。".into());
             ui.append_event(format!("当前连接的物理显示器：{} 台",ui.monitors.len()));
+            if let Some(warning)=monitor_warning{ui.append_event(format!("显示器枚举失败：{warning}"));}
             if ui.cfg.log_to_file {
                 ui.append_event(format!("日志文件：{}",config::app_dir().join("logs").join("current.log").display()));
             } else {
