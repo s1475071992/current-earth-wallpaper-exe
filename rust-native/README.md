@@ -1,4 +1,4 @@
-# Current Earth Wallpaper v1.1.0-beta.1 (Rust Native · Windows)
+# Current Earth Wallpaper v1.1.0 (Rust Native · Windows)
 
 Standalone Windows x64 application with native Win32 UI, WinHTTP + Windows Imaging
 Component (WIC). The **Python main branch is untouched**. Rust source and releases
@@ -30,7 +30,7 @@ are maintained in the `rust-windows-native` branch.
   network downloads, abort/disable the helper after crashes or 15-second timeouts.
   Never silently fall back to applying the virtual wallpaper globally.
 
-## Unified wallpaper source settings (v1.1 beta)
+## Unified wallpaper source settings
 
 The settings window now contains **one checkbox** for desktop + monitor pair mode,
 followed by exactly three selection controls:
@@ -71,7 +71,7 @@ replacement to check that only the newest GUI remains.
 
 ## Hot-unplug a monitor: automatic native virtual-desktop restoration
 
-The v1.1 beta wallpaper switching backend adapts to the **number of connected
+The v1.1.0 wallpaper switching backend adapts to the **number of connected
 physical monitors** on every switch or scheduled background refresh:
 
 - **Exactly one display:** assign each cached desktop+monitor BMP to its
@@ -97,9 +97,9 @@ testing with the user's actual display hardware.
 
 ## Usage
 
-Download the beta EXE from GitHub Actions artifacts, or use the stable v1.0 Release. No Python environment is needed.
-**Fully quit older versions before starting this EXE**, otherwise multiple instances
-may compete to update the same wallpaper.
+Download the portable v1.1.0 EXE from the GitHub Release. No Python environment is needed.
+The v1.1.0 EXE normally shuts down a previous hidden/running instance on relaunch.
+When upgrading from much older releases, exit the old app if replacement is blocked.
 
 To configure virtual desktops, create them with Win+Tab. Enable `Virtual desktop
 wallpapers` and select each desktop from the list, assign its satellite source,
@@ -109,7 +109,7 @@ or actually exit. The tray menu also supports Exit. `Ctrl+Alt+E` restores the wi
 
 Settings: `%LOCALAPPDATA%\CurrentEarthWallpaper\wallpaper_config.json`
 Images: `%LOCALAPPDATA%\CurrentEarthWallpaper\wallpapers`
-Virtual desktop cache: `%LOCALAPPDATA%\CurrentEarthWallpaper\virtual-cache`
+Legacy virtual cache (cleanup only): `%LOCALAPPDATA%\CurrentEarthWallpaper\virtual-cache`
 Optional logs: `%LOCALAPPDATA%\CurrentEarthWallpaper\logs`
 
 ## Windows compatibility and limitations
@@ -134,15 +134,15 @@ Because Windows 11 does not officially guarantee per-monitor virtual-desktop
 wallpaper independence, dual mode is a best-effort compatibility emulation: it may
 briefly show old images or be overwritten by Explorer's own wallpaper restoration.
 The user must keep this app running in the background for switch reapply to work.
-The v1.0.0 release remains available as a working rollback.
+The v1.0.0 release remains available as a rollback.
 
 GitHub CI on Windows Server verifies unit tests, release compilation, offline WIC
 rendering and helper fail-closed behavior. It does not replicate the Windows 11
 desktop compositor, a physical sleep/wake cycle or multi-week runtime.
 
-Cache quotas are soft bounds because the two newest images per profile are protected
-to avoid deleting a file referenced by Explorer. If a directory has exceptionally
-many desktop/source profiles, protected files may exceed the quota.
+The active fixed-name BMP per desktop/monitor pair is retained. Obsolete desktop
+profiles become eligible for cleanup after 14 days. A 128-pair safety limit bounds
+the number of scheduled source downloads and wallpaper files.
 
 ## Build (Windows + Rust)
 

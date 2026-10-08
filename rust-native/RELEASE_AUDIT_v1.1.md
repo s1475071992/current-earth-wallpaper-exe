@@ -1,6 +1,6 @@
 # v1.1.0 Release Readiness / Security Audit (2026-10-08)
 
-Status: **RELEASE CANDIDATE, NOT YET FINAL**.
+Status: **v1.1.0 stable release, user-authorized unsigned build**.
 
 Scope: Rust Windows x64 Win32 client; desktop-monitor wallpaper scheduler, caches,
 native COM helper, display hotplug, sleep/resume, and network image retrieval.
@@ -44,8 +44,8 @@ native COM helper, display hotplug, sleep/resume, and network image retrieval.
   detailed diagnostic log lines intentionally remain Chinese or English.
 - The EXE is currently **unsigned**. Microsoft Defender SmartScreen may warn
   on first launch, even for a legitimate release.
-- The branch does not yet pin a committed `Cargo.lock`; final release packaging
-  must generate and include a consistent dependency lockfile and checksum.
+- The release source ZIP contains `Cargo.lock`, generated before and used by
+  the release pipeline for `cargo test --locked` and `cargo build --release --locked`.
 - Long-run memory, sleep/wake, and hot-unplug have not been measured for multiple
   days in a real Windows 11 26H2 session.
 
