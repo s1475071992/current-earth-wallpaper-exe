@@ -19,7 +19,11 @@ fn main() {
 #[cfg(windows)]
 mod winapp {
     use super::config::{self, AppConfig, LANGUAGES, SCALES, SOURCES};
-    use std::sync::{Mutex, OnceLock};
+    use std::sync::{Mutex, OnceLock,Arc,atomic::{AtomicBool,Ordering}};
+    use std::collections::VecDeque;
+    use std::{fs::{self,OpenOptions},io::Write};
+    use windows_sys::Win32::System::SystemInformation::GetLocalTime;
+    use windows_sys::Win32::Foundation::SYSTEMTIME;
     use std::time::{Duration,Instant};
     use std::{ffi::c_void, ptr::{null, null_mut}};
     use windows_sys::Win32::{
@@ -43,9 +47,11 @@ mod winapp {
     const ID_EXIT: u16 = 108;
     const ID_PATH: u16 = 109;
     const ID_AUTOSTART: u16 = 110;
+    const ID_CLEAR_LOG: u16 = 111;
     const ID_SHOW: u16 = 201;
     const TIMER_ID:usize=1;
     const REFRESH_DONE:u32=WM_APP+2;
+    const REFRESH_PROGRESS:u32=WM_APP+3;
     const ID_TRAY_EXIT: u16 = 202;
     const HOTKEY_ID: i32 = 0xEA47;
     const TRAY_ID: u32 = 17;
@@ -57,13 +63,13 @@ mod winapp {
         unsafe { SetWindowTextW(hwnd, w(text).as_ptr()); }
     }
     fn lang_text(lang: usize, key: usize) -> &'static str {
-        const DICT: [[&str; 17]; 4] = [
-            ["实时地球壁纸 · Rust 原生预览", "卫星图源", "壁纸大小", "界面语言", "更新间隔（分钟）", "显示托盘图标", "显示时间水印", "开始更新", "退出程序", "配置已保存。壁纸下载与渲染引擎正在迁移。", "原生引擎尚未完成，请勿替代正式版。", "无法隐藏托盘：Ctrl+Alt+E 已被其他软件占用。", "显示主窗口", "图像保存目录", "开机自动更新", "停止更新", "正在更新壁纸…"],
-            ["Current Earth Wallpaper · Rust Native Preview", "Satellite source", "Wallpaper size", "Interface language", "Update interval (minutes)", "Show tray icon", "Time watermark", "Start updating", "Exit app", "Settings saved. Native image engine is being ported.", "Native image engine isn't ready yet. Keep using the stable build.", "Cannot hide tray: Ctrl+Alt+E is in use.", "Show window", "Image folder", "Start with Windows", "Stop updating", "Updating wallpaper..."],
-            ["リアルタイム地球壁紙 · Rust ネイティブ", "衛星ソース", "壁紙の大きさ", "表示言語", "更新間隔（分）", "トレイアイコンを表示", "時刻の透かし", "更新開始", "終了", "設定を保存しました。画像エンジンは移植中です。", "画像エンジンはまだ未完成です。", "トレイを隠せません。Ctrl+Alt+E は使用中です。", "ウィンドウを表示", "画像の保存先", "Windows起動時に自動更新", "更新停止", "壁紙を更新中…"],
-            ["실시간 지구 배경화면 · Rust 네이티브", "위성 소스", "배경화면 크기", "인터페이스 언어", "갱신 간격(분)", "트레이 아이콘 표시", "시간 워터마크", "업데이트 시작", "종료", "설정 저장됨. 이미지 엔진을 이식하는 중입니다.", "이미지 엔진이 아직 준비되지 않았습니다.", "트레이 숨기기 불가: Ctrl+Alt+E 사용 중.", "창 표시", "이미지 저장 폴더", "Windows 시작 시 자동 업데이트", "업데이트 중지", "배경화면 갱신 중…"],
+        const DICT: [[&str; 21]; 4] = [
+            ["实时地球壁纸 · Rust 原生预览", "卫星图源", "壁纸大小", "界面语言", "更新间隔（分钟）", "显示托盘图标", "显示时间水印", "开始更新", "退出程序", "配置已保存。壁纸下载与渲染引擎正在迁移。", "原生引擎尚未完成，请勿替代正式版。", "无法隐藏托盘：Ctrl+Alt+E 已被其他软件占用。", "显示主窗口", "图像保存目录", "开机自动更新", "停止更新", "正在更新壁纸…", "执行日志", "清空显示", "关闭窗口：点击“是”隐藏并继续后台更新；点击“否”彻底退出并停止更新；“取消”留在界面。", "关闭窗口"],
+            ["Current Earth Wallpaper · Rust Native Preview", "Satellite source", "Wallpaper size", "Interface language", "Update interval (minutes)", "Show tray icon", "Time watermark", "Start updating", "Exit app", "Settings saved. Native image engine is being ported.", "Native image engine isn't ready yet. Keep using the stable build.", "Cannot hide tray: Ctrl+Alt+E is in use.", "Show window", "Image folder", "Start with Windows", "Stop updating", "Updating wallpaper...", "Execution log", "Clear view", "Close window: Yes hides and keeps updating; No quits and stops; Cancel stays.", "Close window"],
+            ["リアルタイム地球壁紙 · Rust ネイティブ", "衛星ソース", "壁紙の大きさ", "表示言語", "更新間隔（分）", "トレイアイコンを表示", "時刻の透かし", "更新開始", "終了", "設定を保存しました。画像エンジンは移植中です。", "画像エンジンはまだ未完成です。", "トレイを隠せません。Ctrl+Alt+E は使用中です。", "ウィンドウを表示", "画像の保存先", "Windows起動時に自動更新", "更新停止", "壁紙を更新中…", "実行ログ", "表示を消去", "はい：非表示で更新継続。いいえ：終了して更新停止。キャンセル：戻る。", "ウィンドウを閉じる"],
+            ["실시간 지구 배경화면 · Rust 네이티브", "위성 소스", "배경화면 크기", "인터페이스 언어", "갱신 간격(분)", "트레이 아이콘 표시", "시간 워터마크", "업데이트 시작", "종료", "설정 저장됨. 이미지 엔진을 이식하는 중입니다.", "이미지 엔진이 아직 준비되지 않았습니다.", "트레이 숨기기 불가: Ctrl+Alt+E 사용 중.", "창 표시", "이미지 저장 폴더", "Windows 시작 시 자동 업데이트", "업데이트 중지", "배경화면 갱신 중…", "실행 로그", "보기 지우기", "예: 숨기고 계속 업데이트. 아니요: 종료 및 중지. 취소: 돌아가기.", "창 닫기"],
         ];
-        DICT[lang.min(3)][key.min(16)]
+        DICT[lang.min(3)][key.min(20)]
     }
 
     struct Ui {
@@ -79,6 +85,11 @@ mod winapp {
         start: usize,
         exit: usize,
         status: usize,
+        log_area:usize,
+        log_label:usize,
+        clear_log:usize,
+        log_lines:VecDeque<String>,
+        cancel:Arc<AtomicBool>,
         icon: usize,
         tray_added: bool,
         restore_hotkey: bool,
@@ -157,7 +168,11 @@ mod winapp {
                 BS_PUSHBUTTON as u32, ID_START);
             let exit = control(hwnd, "BUTTON", "", 245, 348, 195, 35,
                 BS_PUSHBUTTON as u32, ID_EXIT);
-            let status = control(hwnd, "STATIC", "", 24, 395, 425, 60, 0, 0);
+            let status = control(hwnd, "STATIC", "", 24, 393, 312, 28, 0, 0);
+            let clear_log = control(hwnd,"BUTTON","",344,390,96,29,BS_PUSHBUTTON as u32,ID_CLEAR_LOG);
+            let log_label=control(hwnd,"STATIC","",24,426,200,20,0,0);
+            let log_area=control(hwnd,"EDIT","",24,448,416,220,
+                WS_BORDER|WS_VSCROLL|ES_MULTILINE as u32|ES_AUTOVSCROLL as u32|ES_READONLY as u32,0);
             let icon = LoadIconW(null_mut(), IDI_APPLICATION);
             let mut ui = Self {
                 cfg, parent: hwnd as usize, labels: labels.map(|x| x as usize),
@@ -165,6 +180,9 @@ mod winapp {
                 interval: interval as usize, tray_checkbox: tray_checkbox as usize,
                 watermark: watermark as usize, start: start as usize, exit: exit as usize,
                 status: status as usize, icon: icon as usize,
+                log_area: log_area as usize, log_label:log_label as usize,
+                clear_log:clear_log as usize, log_lines:VecDeque::new(),
+                cancel:Arc::new(AtomicBool::new(false)),
                 tray_added: false, restore_hotkey: hotkey,
                 path_label:path_label as usize,path_edit:path_edit as usize,
                 autostart_check:autostart_check as usize,
@@ -173,6 +191,8 @@ mod winapp {
             };
             ui.localize();
             ui.update_tray();
+            ui.append_event("应用已启动；右上角 × 可以选择后台运行或彻底退出。".into());
+            ui.append_event(format!("日志文件：{}",config::app_dir().join("logs").join("current.log").display()));
             ui
         }
         unsafe fn localize(&self) {
@@ -187,7 +207,8 @@ mod winapp {
             set_text(h(self.watermark),lang_text(l,6));
             set_text(h(self.start),lang_text(l,if self.running{15}else{7}));
             set_text(h(self.exit),lang_text(l,8));
-            set_text(h(self.status),lang_text(l,9));
+            set_text(h(self.log_label),lang_text(l,17));
+            set_text(h(self.clear_log),lang_text(l,18));
         }
         unsafe fn tray_data(&self) -> NOTIFYICONDATAW {
             let mut data: NOTIFYICONDATAW = std::mem::zeroed();
@@ -244,14 +265,45 @@ mod winapp {
             let _ = config::save(&self.cfg);
         }
 
+        unsafe fn append_event(&mut self,detail:String){
+            let mut t:SYSTEMTIME=std::mem::zeroed();
+            GetLocalTime(&mut t);
+            let line=format!("[{:02}:{:02}:{:02}] {}",t.wHour,t.wMinute,t.wSecond,detail);
+            self.log_lines.push_back(line.clone());
+            while self.log_lines.len()>160 { self.log_lines.pop_front(); }
+            let display=self.log_lines.iter().cloned().collect::<Vec<_>>().join("\r\n");
+            set_text(h(self.log_area),&display);
+            SendMessageW(h(self.log_area),EM_SETSEL,display.encode_utf16().count(),-1);
+            SendMessageW(h(self.log_area),EM_SCROLLCARET,0,0);
+            let file=config::app_dir().join("logs").join("current.log");
+            if let Some(parent)=file.parent(){
+                if fs::create_dir_all(parent).is_ok(){
+                    if fs::metadata(&file).is_ok_and(|m|m.len()>2*1024*1024){
+                        let _=fs::rename(&file,file.with_extension("old.log"));
+                    }
+                    if let Ok(mut handle)=OpenOptions::new().create(true).append(true).open(&file){
+                        let _=writeln!(handle,"{line}");
+                    }
+                }
+            }
+        }
+
         unsafe fn spawn_job(&mut self) {
             if !self.running||self.busy { return; }
             self.busy=true;
+            self.cancel=Arc::new(AtomicBool::new(false));
+            self.append_event(format!("开始更新：{}",self.cfg.image_source));
             set_text(h(self.status),lang_text(self.cfg.language_index(),16));
             let cfg=self.cfg.clone();
+            let cancel=self.cancel.clone();
             let hwnd=self.parent;
             std::thread::spawn(move || {
-                let outcome=std::panic::catch_unwind(||crate::engine::run_once(&cfg));
+                let outcome=std::panic::catch_unwind(||crate::engine::run_once(&cfg,&cancel,|line|{
+                    let ptr=Box::into_raw(Box::new(line));
+                    if PostMessageW(h(hwnd),REFRESH_PROGRESS,0,ptr as isize)==0 {
+                        drop(Box::from_raw(ptr));
+                    }
+                }));
                 let result=outcome.unwrap_or_else(|_|Err("Worker unexpectedly panicked".into()));
                 let success=result.is_ok();
                 let report=Box::new(match result {
@@ -269,9 +321,16 @@ mod winapp {
             if success{self.failures=0;}else{self.failures=self.failures.saturating_add(1);}
             let seconds=if !success&&self.failures<=3{60}else{self.cfg.interval_minutes as u64*60};
             self.next_due=Instant::now()+Duration::from_secs(seconds);
+            self.append_event(if success{format!("成功：{notice}")}else{format!("失败：{notice}")});
+            if self.running{
+                self.append_event(format!("下次自动更新：约 {} 分钟后（失败时可能提前重试）",seconds/60));
+            }
             set_text(h(self.status), &notice);
         }
         unsafe fn destroy(&mut self) {
+            self.running=false;
+            self.cancel.store(true,Ordering::Relaxed);
+            self.append_event("退出程序；停止后续自动更新。".into());
             if self.tray_added {
                 Shell_NotifyIconW(NIM_DELETE, &self.tray_data());
                 self.tray_added = false;
@@ -309,7 +368,13 @@ mod winapp {
             WM_COMMAND => {
                 let id = (wp & 0xffff) as u16;
                 match id {
-                    ID_EXIT | ID_TRAY_EXIT => { DestroyWindow(hwnd); },
+                    ID_EXIT | ID_TRAY_EXIT => {
+                        if let Some(state)=UI.get(){state.lock().unwrap().cancel.store(true,Ordering::Relaxed);}
+                        DestroyWindow(hwnd);
+                    },
+                    ID_CLEAR_LOG=>{
+                        if let Some(state)=UI.get(){let mut ui=state.lock().unwrap();ui.log_lines.clear();set_text(h(ui.log_area),"");}
+                    },
                     ID_SHOW => { show_main(hwnd); },
                     ID_START => {
                         if let Some(state)=UI.get(){
@@ -317,8 +382,12 @@ mod winapp {
                             ui.save_changes();
                             ui.running=!ui.running;
                             set_text(h(ui.start), lang_text(ui.cfg.language_index(),if ui.running{15}else{7}));
-                            if ui.running{ui.next_due=Instant::now();ui.spawn_job();}
-                            else{set_text(h(ui.status),"Automatic updates stopped.");}
+                            if ui.running{ui.next_due=Instant::now();ui.append_event("用户启动自动更新。".into());ui.spawn_job();}
+                            else{
+                                ui.cancel.store(true,Ordering::Relaxed);
+                                ui.append_event("用户已停止自动更新；当前任务将尽快取消。".into());
+                                set_text(h(ui.status),"已暂停自动更新");
+                            }
                         }
                     },
                     ID_SOURCE | ID_SCALE | ID_LANGUAGE | ID_INTERVAL | ID_PATH | ID_AUTOSTART | ID_TRAY_CHECK | ID_WATERMARK => {
@@ -338,6 +407,14 @@ mod winapp {
                 }
                 0
             },
+            REFRESH_PROGRESS => {
+                let ptr=lp as *mut String;
+                if !ptr.is_null(){
+                    let message=*Box::from_raw(ptr);
+                    if let Some(state)=UI.get(){state.lock().unwrap().append_event(message);}
+                }
+                0
+            },
             REFRESH_DONE => {
                 let ptr=lp as *mut String;
                 if !ptr.is_null(){
@@ -346,7 +423,21 @@ mod winapp {
                 }
                 0
             },
-            WM_CLOSE => { ShowWindow(hwnd, SW_HIDE); 0 },
+            WM_CLOSE => {
+                let lang=UI.get().map(|v|v.lock().unwrap().cfg.language_index()).unwrap_or(0);
+                let choice=MessageBoxW(hwnd,w(lang_text(lang,19)).as_ptr(),
+                    w(lang_text(lang,20)).as_ptr(),MB_YESNOCANCEL|MB_ICONQUESTION);
+                if choice==IDYES {
+                    if let Some(state)=UI.get(){
+                        state.lock().unwrap().append_event("已隐藏窗口；后台定时任务保持原状态。".into());
+                    }
+                    ShowWindow(hwnd,SW_HIDE);
+                }else if choice==IDNO{
+                    if let Some(state)=UI.get(){state.lock().unwrap().cancel.store(true,Ordering::Relaxed);}
+                    DestroyWindow(hwnd);
+                }
+                0
+            },
             WM_HOTKEY if wp as i32 == HOTKEY_ID => { show_main(hwnd); 0 },
             TRAY_MESSAGE => {
                 match lp as u32 {
@@ -386,7 +477,7 @@ mod winapp {
             let hwnd = CreateWindowExW(
                 0, cls.as_ptr(), w("Current Earth Wallpaper").as_ptr(),
                 WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE,
-                CW_USEDEFAULT, CW_USEDEFAULT, 480, 510,
+                CW_USEDEFAULT, CW_USEDEFAULT, 480, 740,
                 null_mut(), null_mut(), h_instance, null(),
             );
             if hwnd.is_null() { return; }

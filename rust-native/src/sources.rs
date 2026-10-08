@@ -67,6 +67,19 @@ pub fn himawari_tiles(latest_json: &str) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
+/// NOAA STAR publishes stable full-disk GeoColor JPEG links on its CDN.
+/// 5424px provides a high-quality image without 10848px decode costs.
+/// If this path is unavailable, fall back to a smaller image on the same official CDN.
+pub fn goes_cdn_urls(source_name: &str) -> Result<[String; 2], String> {
+    let sat = match source_name {
+        "GOES-East" => "GOES19",
+        "GOES-West" => "GOES18",
+        _ => return Err("Not a GOES source".into()),
+    };
+    let base = format!("https://cdn.star.nesdis.noaa.gov/{sat}/ABI/FD/GEOCOLOR");
+    Ok([format!("{base}/5424x5424.jpg"), format!("{base}/1808x1808.jpg")])
+}
+
 /// Parse a GOES 10848px image anchor without needing a browser engine.
 /// Relative paths are rooted at the NOAA host and never allowed to escape it.
 pub fn goes_image_url(html: &str) -> Result<String, String> {
@@ -100,6 +113,15 @@ mod tests {
     #[test] fn keeps_all_six_existing_sources() {
         assert_eq!(ALL.len(), SOURCES.len());
         for (a, b) in ALL.iter().zip(SOURCES) { assert_eq!(a.name,b); }
+    }
+
+    #[test] fn official_goes_links_do_not_depend_on_html() {
+        let east=goes_cdn_urls("GOES-East").unwrap();
+        let west=goes_cdn_urls("GOES-West").unwrap();
+        assert_eq!(east[0],"https://cdn.star.nesdis.noaa.gov/GOES19/ABI/FD/GEOCOLOR/5424x5424.jpg");
+        assert_eq!(west[0],"https://cdn.star.nesdis.noaa.gov/GOES18/ABI/FD/GEOCOLOR/5424x5424.jpg");
+        assert!(west[1].ends_with("/1808x1808.jpg"));
+        assert!(goes_cdn_urls("NASA EPIC").is_err());
     }
     #[test] fn parses_nasa_json() {
         let url = epic_image_url(r#"[{"image":"epic_a","date":"2026-01-09 02:02:00"},{"image":"epic_b","date":"2026-01-10 00:00:00"}]"#).unwrap();

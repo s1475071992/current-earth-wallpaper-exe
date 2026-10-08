@@ -1,5 +1,5 @@
 //! Bounded-size synchronous WinHTTP downloader. Windows OS certificate store provides TLS roots.
-use std::{ffi::c_void, fs::File, io::Write, path::Path};
+use std::{ffi::c_void, fs::File, io::Write, path::Path, sync::atomic::{AtomicBool, Ordering}};
 use windows_sys::Win32::Networking::WinHttp::*;
 
 struct Handle(*mut c_void);
@@ -28,6 +28,12 @@ pub fn split_url(url:&str)->Result<(String,String,u16,String,bool),String>{
 
 /// Downloads to caller-owned path; size limit is enforced while streaming.
 pub fn download(url:&str,dest:&Path,max_bytes:u64)->Result<(),String>{
+    download_monitored(url,dest,max_bytes,&AtomicBool::new(false),|_|{})
+}
+pub fn download_monitored(
+    url:&str, dest:&Path, max_bytes:u64, cancel:&AtomicBool, mut progress:impl FnMut(u64)
+)->Result<(),String>{
+    if cancel.load(Ordering::Relaxed){return Err("Cancelled".into());}
     let (host,_,port,path,secure)=split_url(url)?;
     let agent=wide("CurrentEarthWallpaperNative/0.2 (+Windows WinHTTP)");
     unsafe {
@@ -61,7 +67,9 @@ pub fn download(url:&str,dest:&Path,max_bytes:u64)->Result<(),String>{
             let mut file=File::create(&tmp).map_err(|e|e.to_string())?;
             let mut total=0u64;
             let mut buf=[0u8;16384];
+            let mut next_report=2*1024*1024u64;
             loop {
+                if cancel.load(Ordering::Relaxed){return Err("Cancelled".into());}
                 let mut n:u32=0;
                 if WinHttpReadData(request.0,buf.as_mut_ptr() as *mut c_void,
                    buf.len() as u32,&mut n)==0{return Err(err("WinHttpReadData"));}
@@ -69,10 +77,13 @@ pub fn download(url:&str,dest:&Path,max_bytes:u64)->Result<(),String>{
                 total+=n as u64;
                 if total>max_bytes{return Err(format!("Download exceeds {} MB",max_bytes/1048576));}
                 file.write_all(&buf[..n as usize]).map_err(|e|e.to_string())?;
+                if total>=next_report{progress(total);next_report=total+2*1024*1024;}
             }
+            if cancel.load(Ordering::Relaxed){return Err("Cancelled".into());}
             file.sync_all().map_err(|e|e.to_string())?;
             drop(file);
             std::fs::rename(&tmp,dest).map_err(|e|e.to_string())?;
+            progress(total);
             Ok(())
         })();
         if result.is_err(){let _=std::fs::remove_file(&tmp);}
