@@ -69,6 +69,32 @@ self-tests) **do not** acquire the GUI mutex; only normal interactive GUI
 processes participate. GitHub Windows CI exercises a hidden 1→2→3 instance
 replacement to check that only the newest GUI remains.
 
+## Hot-unplug a monitor: automatic native virtual-desktop restoration
+
+The v1.1 beta wallpaper switching backend adapts to the **number of connected
+physical monitors** on every switch or scheduled background refresh:
+
+- **Exactly one display:** assign each cached desktop+monitor BMP to its
+  actual Windows 11 virtual-desktop GUID through the previously verified
+  private `SetDesktopWallpaper` COM helper. This preserves the different
+  desktop wallpapers after unplugging an external monitor; desktop switching
+  does not need to fetch images.
+- **Two or more displays:** reapply each connected physical display's BMP
+  for the currently active virtual desktop via public `IDesktopWallpaper`.
+  Different desktop/monitor combinations retain their separate fixed files.
+- **Zero displays:** no wallpaper writes.
+
+`WM_DISPLAYCHANGE` events are debounced for two seconds to allow the Windows
+display topology to stabilize. The app refreshes the monitor list and reapplies
+**existing cached images without network access**. The Detect Displays button
+can also trigger the same cache reapplication manually. When a cached profile
+for a newly recognized display is missing, the next normal scheduled cycle
+will render it.
+
+This is a Windows 11 compatibility mechanism: the internal per-desktop COM
+API is undocumented, and multi-display virtual-desktop emulation still needs
+testing with the user's actual display hardware.
+
 ## Usage
 
 Download the beta EXE from GitHub Actions artifacts, or use the stable v1.0 Release. No Python environment is needed.
