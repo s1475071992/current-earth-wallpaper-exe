@@ -579,7 +579,14 @@ mod winapp {
                         // and target every virtual desktop, including inactive ones.
                         let ids=crate::virtual_desktop::snapshot()?.ids;
                         let plan=crate::virtual_cycle::plan(&cfg,&ids)?;
-                        report(format!("本轮后台定时更新共 {} 个虚拟桌面。",plan.len()));
+                        // One stable wallpaper file per virtual desktop + attached monitor
+                        // in the image folder selected by the user.
+                        let attached=crate::monitor::connected().unwrap_or_default();
+                        let only_display=if attached.len()==1{attached.first()}else{None};
+                        let folder=if cfg.save_path.trim().is_empty(){
+                            config::app_dir().join("wallpapers")
+                        }else{std::path::PathBuf::from(&cfg.save_path)};
+                        report(format!("本轮后台更新：{} 个虚拟桌面；固定壁纸文件夹：{}。",plan.len(),folder.display()));
                         let mut completed=0usize;
                         let mut last=std::path::PathBuf::new();
                         let mut failures=Vec::new();
@@ -589,8 +596,8 @@ mod winapp {
                                 index+1,plan.len(),work.id,work.source));
                             let mut one=cfg.clone();
                             one.image_source=work.source.clone();
-                            let action=if crate::virtual_cache::recent(&work.id,None,&work.source,cfg.interval_minutes).is_some(){
-                                match crate::virtual_cache::restore(&work.id,None,&work.source,&cancel){
+                            let action=if crate::virtual_cache::recent(&folder,&work.id,only_display,&work.source,cfg.interval_minutes).is_some(){
+                                match crate::virtual_cache::restore(&folder,&work.id,only_display,&work.source,&cancel){
                                     Ok(path)=>{
                                         report(format!("桌面 {} 已通过 COM 恢复新鲜缓存，无需下载。",index+1));
                                         Ok(path)
