@@ -16,9 +16,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Probe public endpoints without credentials
         run: python3 rust-native/tests/public_satellite_access.py
+      - name: Install image quality verifier
+        run: python3 -m pip install --quiet --break-system-packages pillow
+      - name: Decode WMS and imagery, reject blank images
+        run: python3 rust-native/tests/public_satellite_visual_probe.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: public-satellite-source-test
-          path: satellite-source-access-results.json
+          path: |
+            satellite-source-access-results.json
+            satellite-image-quality-results.json
+            source-image-samples/*.jpg
           if-no-files-found: warn
