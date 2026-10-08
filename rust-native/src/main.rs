@@ -58,6 +58,7 @@ mod winapp {
     const ID_VDESK_ENABLED:u16=116;
     const ID_VDESK_PICKER:u16=117;
     const ID_VDESK_SOURCE:u16=118;
+    const ID_VDESK_PROBE:u16=119;
     const EM_SETSEL:u32=0x00B1; // Edit control selection
     const EM_SCROLLCARET:u32=0x00B7; // Scroll to caret
     const ID_SHOW: u16 = 201;
@@ -75,13 +76,13 @@ mod winapp {
         unsafe { SetWindowTextW(hwnd, w(text).as_ptr()); }
     }
     fn lang_text(lang: usize, key: usize) -> &'static str {
-        const DICT: [[&str; 29]; 4] = [
-            ["实时地球壁纸 · Rust 原生预览", "卫星图源", "壁纸大小", "界面语言", "更新间隔（分钟）", "显示托盘图标", "显示时间水印", "开始更新", "退出程序", "配置已保存。壁纸下载与渲染引擎正在迁移。", "原生引擎尚未完成，请勿替代正式版。", "无法隐藏托盘：Ctrl+Alt+E 已被其他软件占用。", "显示主窗口", "图像保存目录", "开机自动更新", "停止更新", "正在更新壁纸…", "执行日志", "清空显示", "关闭窗口：点击“是”隐藏并继续后台更新；点击“否”彻底退出并停止更新；“取消”留在界面。", "关闭窗口", "将运行日志保存到文件", "为每台物理显示器分别选择卫星源", "显示器", "该显示器的卫星源", "虚拟桌面独立壁纸（26H2 兼容模式）", "虚拟桌面", "该虚拟桌面的卫星源", "关闭后仍保留各桌面配置"],
-            ["Current Earth Wallpaper · Rust Native Preview", "Satellite source", "Wallpaper size", "Interface language", "Update interval (minutes)", "Show tray icon", "Time watermark", "Start updating", "Exit app", "Settings saved. Native image engine is being ported.", "Native image engine isn't ready yet. Keep using the stable build.", "Cannot hide tray: Ctrl+Alt+E is in use.", "Show window", "Image folder", "Start with Windows", "Stop updating", "Updating wallpaper...", "Execution log", "Clear view", "Close window: Yes hides and keeps updating; No quits and stops; Cancel stays.", "Close window", "Save logs to file", "Different satellite for each monitor", "Monitor", "Satellite for this monitor", "Virtual desktop wallpapers (26H2 compatibility)", "Virtual desktop", "Satellite for this desktop", "Settings retained when disabled"],
-            ["リアルタイム地球壁紙 · Rust ネイティブ", "衛星ソース", "壁紙の大きさ", "表示言語", "更新間隔（分）", "トレイアイコンを表示", "時刻の透かし", "更新開始", "終了", "設定を保存しました。画像エンジンは移植中です。", "画像エンジンはまだ未完成です。", "トレイを隠せません。Ctrl+Alt+E は使用中です。", "ウィンドウを表示", "画像の保存先", "Windows起動時に自動更新", "更新停止", "壁紙を更新中…", "実行ログ", "表示を消去", "はい：非表示で更新継続。いいえ：終了して更新停止。キャンセル：戻る。", "ウィンドウを閉じる", "ログをファイルに保存", "モニターごとに衛星を選択", "モニター", "このモニターの衛星", "仮想デスクトップ別壁紙（26H2対応）", "仮想デスクトップ", "このデスクトップの衛星", "無効でも設定は保持されます"],
-            ["실시간 지구 배경화면 · Rust 네이티브", "위성 소스", "배경화면 크기", "인터페이스 언어", "갱신 간격(분)", "트레이 아이콘 표시", "시간 워터마크", "업데이트 시작", "종료", "설정 저장됨. 이미지 엔진을 이식하는 중입니다.", "이미지 엔진이 아직 준비되지 않았습니다.", "트레이 숨기기 불가: Ctrl+Alt+E 사용 중.", "창 표시", "이미지 저장 폴더", "Windows 시작 시 자동 업데이트", "업데이트 중지", "배경화면 갱신 중…", "실행 로그", "보기 지우기", "예: 숨기고 계속 업데이트. 아니요: 종료 및 중지. 취소: 돌아가기.", "창 닫기", "실행 로그 파일에 저장", "모니터별로 위성 소스 설정", "모니터", "이 모니터의 위성", "가상 데스크톱별 배경화면 (26H2 호환)", "가상 데스크톱", "이 데스크톱의 위성", "사용 중지 시에도 설정 유지"],
+        const DICT: [[&str; 30]; 4] = [
+            ["实时地球壁纸 · Rust 原生预览", "卫星图源", "壁纸大小", "界面语言", "更新间隔（分钟）", "显示托盘图标", "显示时间水印", "开始更新", "退出程序", "配置已保存。壁纸下载与渲染引擎正在迁移。", "原生引擎尚未完成，请勿替代正式版。", "无法隐藏托盘：Ctrl+Alt+E 已被其他软件占用。", "显示主窗口", "图像保存目录", "开机自动更新", "停止更新", "正在更新壁纸…", "执行日志", "清空显示", "关闭窗口：点击“是”隐藏并继续后台更新；点击“否”彻底退出并停止更新；“取消”留在界面。", "关闭窗口", "将运行日志保存到文件", "为每台物理显示器分别选择卫星源", "显示器", "该显示器的卫星源", "虚拟桌面独立壁纸（26H2 兼容模式）", "虚拟桌面", "该虚拟桌面的卫星源", "关闭后仍保留各桌面配置", "检测虚拟桌面"],
+            ["Current Earth Wallpaper · Rust Native Preview", "Satellite source", "Wallpaper size", "Interface language", "Update interval (minutes)", "Show tray icon", "Time watermark", "Start updating", "Exit app", "Settings saved. Native image engine is being ported.", "Native image engine isn't ready yet. Keep using the stable build.", "Cannot hide tray: Ctrl+Alt+E is in use.", "Show window", "Image folder", "Start with Windows", "Stop updating", "Updating wallpaper...", "Execution log", "Clear view", "Close window: Yes hides and keeps updating; No quits and stops; Cancel stays.", "Close window", "Save logs to file", "Different satellite for each monitor", "Monitor", "Satellite for this monitor", "Virtual desktop wallpapers (26H2 compatibility)", "Virtual desktop", "Satellite for this desktop", "Settings retained when disabled", "Check desktops"],
+            ["リアルタイム地球壁紙 · Rust ネイティブ", "衛星ソース", "壁紙の大きさ", "表示言語", "更新間隔（分）", "トレイアイコンを表示", "時刻の透かし", "更新開始", "終了", "設定を保存しました。画像エンジンは移植中です。", "画像エンジンはまだ未完成です。", "トレイを隠せません。Ctrl+Alt+E は使用中です。", "ウィンドウを表示", "画像の保存先", "Windows起動時に自動更新", "更新停止", "壁紙を更新中…", "実行ログ", "表示を消去", "はい：非表示で更新継続。いいえ：終了して更新停止。キャンセル：戻る。", "ウィンドウを閉じる", "ログをファイルに保存", "モニターごとに衛星を選択", "モニター", "このモニターの衛星", "仮想デスクトップ別壁紙（26H2対応）", "仮想デスクトップ", "このデスクトップの衛星", "無効でも設定は保持されます", "デスクトップ検出"],
+            ["실시간 지구 배경화면 · Rust 네이티브", "위성 소스", "배경화면 크기", "인터페이스 언어", "갱신 간격(분)", "트레이 아이콘 표시", "시간 워터마크", "업데이트 시작", "종료", "설정 저장됨. 이미지 엔진을 이식하는 중입니다.", "이미지 엔진이 아직 준비되지 않았습니다.", "트레이 숨기기 불가: Ctrl+Alt+E 사용 중.", "창 표시", "이미지 저장 폴더", "Windows 시작 시 자동 업데이트", "업데이트 중지", "배경화면 갱신 중…", "실행 로그", "보기 지우기", "예: 숨기고 계속 업데이트. 아니요: 종료 및 중지. 취소: 돌아가기.", "창 닫기", "실행 로그 파일에 저장", "모니터별로 위성 소스 설정", "모니터", "이 모니터의 위성", "가상 데스크톱별 배경화면 (26H2 호환)", "가상 데스크톱", "이 데스크톱의 위성", "사용 중지 시에도 설정 유지", "바탕 화면 감지"],
         ];
-        DICT[lang.min(3)][key.min(28)]
+        DICT[lang.min(3)][key.min(29)]
     }
 
     struct Ui {
@@ -113,6 +114,10 @@ mod winapp {
         vdesk_label:usize,
         vdesk_source_label:usize,
         vdesk_hint:usize,
+        vdesk_probe:usize,
+        vdesk_candidate:Option<String>,
+        vdesk_candidate_count:u8,
+        vdesk_heartbeat:Instant,
         vdesks:Vec<String>,
         active_vdesk:Option<String>,
         vdesk_error_reported:bool,
@@ -237,7 +242,8 @@ mod winapp {
             let initial_source=vdesks.get(active_idx).and_then(|v|cfg.virtual_desktop_sources.get(v))
                 .unwrap_or(&cfg.image_source);
             choose(vdesk_source,&SOURCES,SOURCES.iter().position(|x|*x==initial_source).unwrap_or(0));
-            let vdesk_hint=control(hwnd,"STATIC","",24,616,416,24,0,0);
+            let vdesk_hint=control(hwnd,"STATIC","",24,616,288,24,0,0);
+            let vdesk_probe=control(hwnd,"BUTTON","",318,610,122,30,BS_PUSHBUTTON as u32,ID_VDESK_PROBE);
             let status = control(hwnd, "STATIC", "", 24,659, 416, 28, 0, 0);
             let clear_log = control(hwnd,"BUTTON","",730,24,90,29,BS_PUSHBUTTON as u32,ID_CLEAR_LOG);
             let file_log_checkbox=control(hwnd,"BUTTON","",24,694,410,26,
@@ -262,6 +268,8 @@ mod winapp {
                 vdesk_enabled:vdesk_enabled as usize,vdesk_picker:vdesk_picker as usize,
                 vdesk_source:vdesk_source as usize,vdesk_label:vdesk_label as usize,
                 vdesk_source_label:vdesk_source_label as usize,vdesk_hint:vdesk_hint as usize,
+                vdesk_probe:vdesk_probe as usize,vdesk_candidate:None,vdesk_candidate_count:0,
+                vdesk_heartbeat:Instant::now(),
                 vdesks,active_vdesk,vdesk_error_reported:false,vdesk_pending:false,
                 log_lines:VecDeque::new(),
                 cancel:Arc::new(AtomicBool::new(false)),
@@ -307,6 +315,7 @@ mod winapp {
             set_text(h(self.vdesk_label),lang_text(l,26));
             set_text(h(self.vdesk_source_label),lang_text(l,27));
             set_text(h(self.vdesk_hint),lang_text(l,28));
+            set_text(h(self.vdesk_probe),lang_text(l,29));
         }
         unsafe fn tray_data(&self) -> NOTIFYICONDATAW {
             let mut data: NOTIFYICONDATAW = std::mem::zeroed();
@@ -335,7 +344,14 @@ mod winapp {
             self.cfg.watermark_on = checked(h(self.watermark));
             self.cfg.log_to_file = checked(h(self.file_log_checkbox));
             self.cfg.per_monitor_enabled = checked(h(self.monitor_enabled));
+            let was_vdesk_enabled=self.cfg.virtual_desktops_enabled;
             self.cfg.virtual_desktops_enabled=checked(h(self.vdesk_enabled));
+            if was_vdesk_enabled!=self.cfg.virtual_desktops_enabled{
+                self.append_event(format!("虚拟桌面模式已{}；已识别 {} 个桌面；当前：{}",if self.cfg.virtual_desktops_enabled{"开启"}else{"关闭"},self.vdesks.len(),self.active_vdesk.as_deref().unwrap_or("未知")));
+                self.vdesk_candidate=None;
+                self.vdesk_candidate_count=0;
+                if self.cfg.virtual_desktops_enabled{self.vdesk_pending=true;self.next_due=Instant::now();}
+            }
             let mut folder=[0u16;2048];
             GetWindowTextW(h(self.path_edit),folder.as_mut_ptr(),folder.len() as i32);
             self.cfg.save_path=String::from_utf16_lossy(&folder).trim_matches('\0').trim().to_string();
@@ -415,8 +431,26 @@ mod winapp {
                 self.sync_monitor_source();
             }
         }
+        unsafe fn report_virtual_desktops(&mut self){
+            self.append_event(format!("设置：虚拟桌面模式={}；物理多显示器模式={}；后台更新={}",
+                self.cfg.virtual_desktops_enabled,self.cfg.per_monitor_enabled,self.running));
+            match crate::virtual_desktop::snapshot(){
+                Ok(snap)=>{
+                    self.append_event(format!("检测结果：{} 个虚拟桌面；当前 GUID={}；来源={}",
+                        snap.ids.len(),snap.current.as_deref().unwrap_or("未知"),snap.source));
+                    for (i,id) in snap.ids.iter().enumerate(){
+                        self.append_event(format!("Desktop {}: {}",i+1,id));
+                    }
+                    for line in snap.diagnostic {self.append_event(format!("注册表诊断：{line}"));}
+                    if snap.current.is_none(){
+                        self.append_event("无法识别当前桌面：请切换一次桌面，再点“检测虚拟桌面”。".into());
+                    }
+                },
+                Err(e)=>self.append_event(format!("虚拟桌面识别错误：{e}")),
+            }
+        }
         unsafe fn poll_virtual_desktops(&mut self){
-            if !self.cfg.virtual_desktops_enabled {return;}
+            if !self.cfg.virtual_desktops_enabled{return;}
             match crate::virtual_desktop::snapshot(){
                 Ok(snap)=>{
                     if self.vdesks!=snap.ids {
@@ -427,29 +461,57 @@ mod winapp {
                         }
                         self.append_event(format!("已刷新虚拟桌面列表：{} 个",self.vdesks.len()));
                     }
-                    if snap.current!=self.active_vdesk {
-                        self.active_vdesk=snap.current;
-                        if let Some(id)=self.active_vdesk.clone(){
-                            self.append_event(format!("切换到虚拟桌面：{id}"));
-                            if let Some(index)=self.vdesks.iter().position(|v|v==&id){
-                                SendMessageW(h(self.vdesk_picker),CB_SETCURSEL,index,0);
-                                self.sync_virtual_source();
+                    if snap.current!=self.active_vdesk{
+                        if snap.current.is_none(){
+                            self.vdesk_candidate=None;
+                            self.vdesk_candidate_count=0;
+                            self.active_vdesk=None;
+                            self.cancel.store(true,Ordering::Relaxed);
+                            if !self.vdesk_error_reported{
+                                self.append_event("无法确认当前桌面 ID，暂停自动更新；请点击“检测虚拟桌面”检查。".into());
+                                self.vdesk_error_reported=true;
                             }
-                            self.cancel.store(true,Ordering::Relaxed);
-                            self.next_due=Instant::now();
-                            self.vdesk_pending=true;
                         }else{
-                            self.cancel.store(true,Ordering::Relaxed);
-                            self.append_event("无法确定当前虚拟桌面，暂停壁纸写入以保护其他桌面。".into());
+                            if self.vdesk_candidate==snap.current{
+                                self.vdesk_candidate_count=self.vdesk_candidate_count.saturating_add(1);
+                            }else{
+                                self.vdesk_candidate=snap.current.clone();
+                                self.vdesk_candidate_count=1;
+                            }
+                            if self.vdesk_candidate_count>=2{
+                                self.active_vdesk=snap.current;
+                                self.vdesk_candidate=None;
+                                self.vdesk_candidate_count=0;
+                                if let Some(id)=self.active_vdesk.clone(){
+                                    self.append_event(format!("已确认切换到虚拟桌面：{id}（检测方式：{}）",snap.source));
+                                    if let Some(index)=self.vdesks.iter().position(|v|v==&id){
+                                        SendMessageW(h(self.vdesk_picker),CB_SETCURSEL,index,0);
+                                        self.sync_virtual_source();
+                                    }
+                                    self.cancel.store(true,Ordering::Relaxed);
+                                    self.next_due=Instant::now();
+                                    self.vdesk_pending=true;
+                                }
+                            }
                         }
+                    }else{
+                        self.vdesk_candidate=None;
+                        self.vdesk_candidate_count=0;
                     }
                     self.vdesk_error_reported=false;
+                    if self.vdesk_heartbeat.elapsed()>=Duration::from_secs(30){
+                        self.append_event(format!("虚拟桌面监测运行中：当前={} / 总数={} / 更新={}",
+                            self.active_vdesk.as_deref().unwrap_or("未知"),self.vdesks.len(),self.running));
+                        self.vdesk_heartbeat=Instant::now();
+                    }
                 }
                 Err(e)=>{
                     self.active_vdesk=None;
+                    self.vdesk_candidate=None;
+                    self.vdesk_candidate_count=0;
                     self.cancel.store(true,Ordering::Relaxed);
                     if !self.vdesk_error_reported{
-                        self.append_event(format!("虚拟桌面识别失败：{e}；将暂停自动壁纸写入。"));
+                        self.append_event(format!("虚拟桌面检测失败：{e}；壁纸更新已暂停。"));
                         self.vdesk_error_reported=true;
                     }
                 }
@@ -633,6 +695,9 @@ mod winapp {
                         if let Some(state)=UI.get(){state.lock().unwrap().cancel.store(true,Ordering::Relaxed);}
                         DestroyWindow(hwnd);
                     },
+                    ID_VDESK_PROBE=>{
+                        if let Some(state)=UI.get(){state.lock().unwrap().report_virtual_desktops();}
+                    },
                     ID_VDESK_PICKER=>{
                         if let Some(state)=UI.get(){state.lock().unwrap().sync_virtual_source();}
                     },
@@ -653,6 +718,12 @@ mod winapp {
                         if let Some(state)=UI.get(){
                             let mut ui=state.lock().unwrap();
                             ui.save_changes();
+                            ui.append_event(format!("更新前确认：虚拟桌面模式={}，多显示器模式={}，虚拟桌面数={}，当前={}。",
+                                ui.cfg.virtual_desktops_enabled,ui.cfg.per_monitor_enabled,
+                                ui.vdesks.len(),ui.active_vdesk.as_deref().unwrap_or("未知")));
+                            if !ui.cfg.virtual_desktops_enabled && ui.vdesks.len()>1 {
+                                ui.append_event("提示：虚拟桌面模式当前关闭，壁纸只能按全局/物理显示器更新。请勾选“虚拟桌面独立壁纸”。".into());
+                            }
                             ui.running=!ui.running;
                             set_text(h(ui.start), lang_text(ui.cfg.language_index(),if ui.running{15}else{7}));
                             if ui.running{ui.next_due=Instant::now();ui.append_event("用户启动自动更新。".into());ui.spawn_job();}
@@ -794,7 +865,9 @@ fn live_goes_probe(){
 
 #[cfg(windows)]
 fn virtual_desktop_probe(){
-    let report=match virtual_desktop::snapshot(){
+    let report=crate::virtual_desktop::diagnostic_report();
+    /* prior report builder removed below */
+    let _legacy_report=match virtual_desktop::snapshot(){
         Ok(v)=>serde_json::json!({
             "available":true,
             "count":v.ids.len(),
