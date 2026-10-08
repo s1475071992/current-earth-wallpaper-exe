@@ -1,0 +1,169 @@
+name: Publish Current Earth Wallpaper Rust v1.1.0
+on:
+  push:
+    branches: [rust-windows-native]
+    paths:
+      - rust-native/RELEASE_READY_v1.1.0
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-native
+      - name: Verify Windows native Rust v1.1.0 source
+        shell: pwsh
+        run: |
+          Push-Location rust-native
+          cargo generate-lockfile
+          if ($LASTEXITCODE -ne 0) { throw "Could not lock dependencies" }
+          cargo test --locked
+          if ($LASTEXITCODE -ne 0) { throw "Unit tests failed" }
+          cargo clippy --locked --all-targets -- -D warnings
+          if ($LASTEXITCODE -ne 0) { throw "Clippy static checks failed" }
+          cargo build --release --locked
+          if ($LASTEXITCODE -ne 0) { throw "Release build failed" }
+          Pop-Location
+          if ((Select-String -Path rust-native/Cargo.toml -Pattern '^version = "1\.1\.0"
+          $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $file))
+          if ($bytes.Length -lt 10000 -or $bytes[0] -ne 77 -or $bytes[1] -ne 90) {
+            throw "Invalid Windows executable"
+          }
+      - name: Offline Windows WIC image rendering
+        shell: pwsh
+        run: |
+          Push-Location rust-native
+          $p = Start-Process -FilePath "target/release/CurrentEarthWallpaperNative.exe" -ArgumentList "--self-test-render" -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "Offline WIC render failed: $($p.ExitCode)" }
+          Pop-Location
+      - name: Probe actual satellite downloads over TLS
+        shell: pwsh
+        run: |
+          Push-Location rust-native
+          $p = Start-Process -FilePath "target/release/CurrentEarthWallpaperNative.exe" -ArgumentList "--self-test-fy4b-https" -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "FY4B TLS download or decode failed" }
+          $p = Start-Process -FilePath "target/release/CurrentEarthWallpaperNative.exe" -ArgumentList "--self-test-goes" -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "GOES download or decode failed" }
+          Pop-Location
+      - name: Package portable EXE, full Rust source, SHA256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $base = "dist/src/CurrentEarthWallpaper-v1.1.0"
+          New-Item -ItemType Directory -Force -Path "$base/rust-native" | Out-Null
+          Copy-Item rust-native/src "$base/rust-native/src" -Recurse
+          Copy-Item rust-native/Cargo.toml, rust-native/Cargo.lock, rust-native/README.md, rust-native/RELEASE_NOTES_v1.1.0.md, rust-native/RELEASE_AUDIT_v1.1.md, rust-native/LICENSE "$base/rust-native/"
+          New-Item -ItemType Directory -Force -Path "$base/.github/workflows" | Out-Null
+          Copy-Item .github/workflows/rust-windows-native.yml "$base/.github/workflows/"
+          Copy-Item .github/workflows/rust-release-v1_1.yml "$base/.github/workflows/"
+          $exe = 'CurrentEarthWallpaperNative-v1.1.0-windows-x64.exe'
+          $source = 'CurrentEarthWallpaper-v1.1.0-source.zip'
+          Copy-Item rust-native/target/release/CurrentEarthWallpaperNative.exe "dist/$exe"
+          Compress-Archive -Path "$base" -DestinationPath "dist/$source" -CompressionLevel Optimal
+          Copy-Item rust-native/RELEASE_NOTES_v1.1.0.md dist/
+          $lines = @()
+          foreach ($name in @($exe,$source)) {
+            $hash = (Get-FileHash "dist/$name" -Algorithm SHA256).Hash.ToLowerInvariant()
+            $lines += "$hash  $name"
+            Write-Host "$hash  $name"
+          }
+          [System.IO.File]::WriteAllLines((Join-Path (Resolve-Path dist) 'SHA256SUMS.txt'),$lines)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CurrentEarthWallpaper-v1.1.0-release-files
+          path: dist/*
+          retention-days: 90
+          if-no-files-found: error
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: CurrentEarthWallpaper-v1.1.0-release-files
+          path: release-dist
+      - name: Create v1.1.0 unsigned stable GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          test -f release-dist/CurrentEarthWallpaperNative-v1.1.0-windows-x64.exe
+          test -f release-dist/CurrentEarthWallpaper-v1.1.0-source.zip
+          test -f release-dist/SHA256SUMS.txt
+          gh release create v1.1.0 \
+            --target "$GITHUB_SHA" \
+            --title "Current Earth Wallpaper v1.1.0 (Rust Windows x64)" \
+            --notes-file release-dist/RELEASE_NOTES_v1.1.0.md \
+            release-dist/CurrentEarthWallpaperNative-v1.1.0-windows-x64.exe \
+            release-dist/CurrentEarthWallpaper-v1.1.0-source.zip \
+            release-dist/SHA256SUMS.txt
+ | Measure-Object).Count -ne 1) { throw 'Release package version mismatch' }
+          $file = 'rust-native/target/release/CurrentEarthWallpaperNative.exe'
+          $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $file))
+          if ($bytes.Length -lt 10000 -or $bytes[0] -ne 77 -or $bytes[1] -ne 90) {
+            throw "Invalid Windows executable"
+          }
+      - name: Package portable EXE, full Rust source, SHA256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $base = "dist/src/CurrentEarthWallpaper-v1.1.0"
+          New-Item -ItemType Directory -Force -Path "$base/rust-native" | Out-Null
+          Copy-Item rust-native/src "$base/rust-native/src" -Recurse
+          Copy-Item rust-native/Cargo.toml, rust-native/Cargo.lock, rust-native/README.md, rust-native/RELEASE_NOTES_v1.1.0.md, rust-native/LICENSE "$base/rust-native/"
+          New-Item -ItemType Directory -Force -Path "$base/.github/workflows" | Out-Null
+          Copy-Item .github/workflows/rust-windows-native.yml "$base/.github/workflows/"
+          Copy-Item .github/workflows/rust-release-v1.yml "$base/.github/workflows/"
+          $exe = 'CurrentEarthWallpaperNative-v1.1.0-windows-x64.exe'
+          $source = 'CurrentEarthWallpaper-v1.1.0-source.zip'
+          Copy-Item rust-native/target/release/CurrentEarthWallpaperNative.exe "dist/$exe"
+          Compress-Archive -Path "$base" -DestinationPath "dist/$source" -CompressionLevel Optimal
+          Copy-Item rust-native/RELEASE_NOTES_v1.1.0.md dist/
+          $lines = @()
+          foreach ($name in @($exe,$source)) {
+            $hash = (Get-FileHash "dist/$name" -Algorithm SHA256).Hash.ToLowerInvariant()
+            $lines += "$hash  $name"
+            Write-Host "$hash  $name"
+          }
+          [System.IO.File]::WriteAllLines((Join-Path (Resolve-Path dist) 'SHA256SUMS.txt'),$lines)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CurrentEarthWallpaper-v1.1.0-release-files
+          path: dist/*
+          retention-days: 90
+          if-no-files-found: error
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: CurrentEarthWallpaper-v1.1.0-release-files
+          path: release-dist
+      - name: Create v1.1.0 GitHub release and upload binaries + source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          test -f release-dist/CurrentEarthWallpaperNative-v1.1.0-windows-x64.exe
+          test -f release-dist/CurrentEarthWallpaper-v1.1.0-source.zip
+          test -f release-dist/SHA256SUMS.txt
+          gh release create v1.1.0 \
+            --target "$GITHUB_SHA" \
+            --title "Current Earth Wallpaper v1.1.0 (Rust Windows x64)" \
+            --notes-file release-dist/RELEASE_NOTES_v1.1.0.md \
+            release-dist/CurrentEarthWallpaperNative-v1.1.0-windows-x64.exe \
+            release-dist/CurrentEarthWallpaper-v1.1.0-source.zip \
+            release-dist/SHA256SUMS.txt
