@@ -289,7 +289,7 @@ mod winapp {
             };
             ui.localize();
             ui.update_tray();
-            ui.append_event("Current Earth Wallpaper v1.0.0 · 稳定性增强版".into());
+            ui.append_event("Current Earth Wallpaper v1.1 beta · 双模式测试版".into());
             ui.append_event("应用已启动；右上角 × 可以选择后台运行或彻底退出。".into());
             ui.append_event(format!("当前连接的物理显示器：{} 台",ui.monitors.len()));
             if let Some(warning)=monitor_warning{ui.append_event(format!("显示器枚举失败：{warning}"));}

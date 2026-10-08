@@ -1,4 +1,4 @@
-# Current Earth Wallpaper v1.0.0 (Rust Native · Windows)
+# Current Earth Wallpaper v1.1.0-beta.1 (Rust Native · Windows)
 
 Standalone Windows x64 application with native Win32 UI, WinHTTP + Windows Imaging
 Component (WIC). The **Python main branch is untouched**. Rust source and releases
@@ -10,6 +10,7 @@ are maintained in the `rust-windows-native` branch.
 - Four UI languages, native tray icon, adjustable refresh interval, autostart and image scale.
 - Optional file logging; window displays recent execution events without saving to disk.
 - Per-physical-monitor satellite selection using public `IDesktopWallpaper` API.
+- Experimental desktop × monitor combination mode, retaining one image per pair.
 - Windows 11 virtual desktops, each with its own satellite source. Updates are scheduled
   **for every virtual desktop** in the background regardless of which is active; switching
   desktops never downloads images or resets the refresh schedule.
@@ -31,7 +32,7 @@ are maintained in the `rust-windows-native` branch.
 
 ## Usage
 
-Download the EXE from the GitHub v1.0 Release. No Python environment is needed.
+Download the beta EXE from GitHub Actions artifacts, or use the stable v1.0 Release. No Python environment is needed.
 **Fully quit older versions before starting this EXE**, otherwise multiple instances
 may compete to update the same wallpaper.
 
@@ -53,9 +54,22 @@ and may change in future Windows builds. Version range 26100..26399 is an initia
 gate, not a guarantee. The helper is isolated, crash/timeout guarded, and fails
 closed; a Windows update may require a new compatible implementation.
 
-Per-virtual-desktop wallpapers and different per-physical-monitor satellite sources
-**cannot currently be enabled together**. That combination is deliberately blocked
-to protect other screens/desktops. The two modes are independently supported.
+**Dual mode (experimental):** Enabling both virtual desktops and independent
+physical monitors now gives each (virtual desktop GUID, physical monitor ID) pair
+its own satellite selection and fixed BMP in the chosen wallpaper folder.
+In the GUI, select a virtual desktop, then select a monitor, then choose that
+monitor's satellite. The per-desktop default is used when no pair override exists.
+
+Background refreshes render each pair one at a time without changing inactive
+desktops' physical monitors. On a virtual-desktop switch, the app reads and reapplies
+existing BMPs using the supported per-monitor `IDesktopWallpaper::SetWallpaper`
+API. **No network request and no rendering occur on switching.**
+
+Because Windows 11 does not officially guarantee per-monitor virtual-desktop
+wallpaper independence, dual mode is a best-effort compatibility emulation: it may
+briefly show old images or be overwritten by Explorer's own wallpaper restoration.
+The user must keep this app running in the background for switch reapply to work.
+The v1.0.0 release remains available as a working rollback.
 
 GitHub CI on Windows Server verifies unit tests, release compilation, offline WIC
 rendering and helper fail-closed behavior. It does not replicate the Windows 11
