@@ -489,10 +489,8 @@ mod winapp {
                     w(&format!("Desktop {}",i+1)).as_ptr() as LPARAM);
             }
             if !ids.is_empty(){
-                let index=previous.as_deref()
-                    .and_then(|v|ids.iter().position(|id|id==v))
-                    .or_else(||current.and_then(|v|ids.iter().position(|id|id==v)))
-                    .unwrap_or(0);
+                let index=crate::virtual_cycle::picker_selection_index(
+                    ids,previous.as_deref(),current).unwrap_or(0);
                 SendMessageW(h(self.vdesk_picker),CB_SETCURSEL,index,0);
                 self.sync_pair_source();
             }
