@@ -26,6 +26,12 @@ fn meta_valid(path:&Path,source:&str)->bool {
         .and_then(|b|serde_json::from_slice::<Meta>(&b).ok())
         .is_some_and(|m|m.source==source)
 }
+/// Cached stable BMP for one pair, regardless of age. Used only for fast
+/// reapplication after switching virtual desktops: never fetch network data.
+pub fn cached_pair(folder:&Path,id:&str,monitor:&Monitor,source:&str)->Option<PathBuf>{
+    let path=target(folder,Some(id),Some(monitor));
+    if path.is_file() && meta_valid(&path,source){Some(path)}else{None}
+}
 pub fn recent(folder:&Path,id:&str,monitor:Option<&Monitor>,source:&str,minutes:u32)->Option<PathBuf>{
     let bmp=target(folder,Some(id),monitor);
     if !bmp.is_file()||!meta_valid(&bmp,source){return None;}
