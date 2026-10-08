@@ -18,6 +18,7 @@ mod virtual_cycle;
 mod scheduler;
 mod maintenance;
 #[cfg(windows)] mod virtual_wallpaper;
+#[cfg(windows)] mod single_instance;
 
 #[cfg(not(windows))]
 fn main() {
@@ -283,6 +284,7 @@ mod winapp {
             ui.update_tray();
             ui.append_event("Current Earth Wallpaper v1.1 beta · 双模式测试版".into());
             ui.append_event("应用已启动；右上角 × 可以选择后台运行或彻底退出。".into());
+            ui.append_event("单实例保护已开启：重新运行 EXE 会自动关闭旧版进程并打开新窗口。".into());
             ui.append_event(format!("当前连接的物理显示器：{} 台",ui.monitors.len()));
             if let Some(warning)=monitor_warning{ui.append_event(format!("显示器枚举失败：{warning}"));}
             if let Some(warning)=vdesk_warning{ui.append_event(format!("虚拟桌面：{warning}"));}
@@ -1098,5 +1100,22 @@ fn main() {
         let _=std::fs::remove_file(out);
         return;
     }
+    // Helper and offline diagnostics returned above. Only the real GUI uses
+    // the instance mutex; per-virtual-desktop COM helpers must remain concurrent.
+    let (_guard,_replaced)=match single_instance::replace_previous(){
+        Ok(value)=>value,
+        Err(error)=>{
+            let message=format!("无法接管之前运行的 Current Earth Wallpaper：\n{error}\n\n为防止重复更新壁纸，本次启动已取消。");
+            let wide:Vec<u16>=message.encode_utf16().chain(Some(0)).collect();
+            let title:Vec<u16>="Current Earth Wallpaper - Single Instance".encode_utf16().chain(Some(0)).collect();
+            unsafe{
+                windows_sys::Win32::UI::WindowsAndMessaging::MessageBoxW(
+                    std::ptr::null_mut(),wide.as_ptr(),title.as_ptr(),
+                    windows_sys::Win32::UI::WindowsAndMessaging::MB_OK|
+                    windows_sys::Win32::UI::WindowsAndMessaging::MB_ICONWARNING);
+            }
+            std::process::exit(3);
+        }
+    };
     winapp::run();
 }
