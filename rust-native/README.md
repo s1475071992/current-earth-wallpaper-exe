@@ -53,6 +53,22 @@ desktops only reapplies existing monitor BMPs, never downloading new images.
 This Windows 11 emulation remains experimental until verified on a real
 multi-monitor, multi-virtual-desktop system.
 
+## One-process restart and replacement
+
+The program allows **one GUI process per Windows logon session**. If you
+launch the EXE again while its earlier copy is running, including when the
+earlier window is hidden and the tray icon is disabled, the new instance
+sends a graceful Exit command to the old window, waits for the old process
+to finish, then takes ownership of a session-local Windows named mutex
+and opens the new GUI. Settings are retained; no second background update
+loop is allowed. If the old process is stuck or cannot be stopped within
+12 seconds, the new launch reports an error instead of running two copies.
+
+The hidden Windows COM helper subprocesses (wallpaper assignment, probing,
+self-tests) **do not** acquire the GUI mutex; only normal interactive GUI
+processes participate. GitHub Windows CI exercises a hidden 1→2→3 instance
+replacement to check that only the newest GUI remains.
+
 ## Usage
 
 Download the beta EXE from GitHub Actions artifacts, or use the stable v1.0 Release. No Python environment is needed.

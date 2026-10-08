@@ -86,6 +86,38 @@ jobs:
           } finally {
             if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
           }
+      - name: Hidden-window single-instance takeover integration test
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path 'target/release/CurrentEarthWallpaperNative.exe').Path
+          $first = $null
+          $second = $null
+          $third = $null
+          try {
+            # The GUI remains hidden, has no need for a tray icon, and does not run downloads.
+            $first = Start-Process -FilePath $exe -ArgumentList '--instance-test-hidden' -PassThru
+            Start-Sleep -Milliseconds 1800
+            if ($first.HasExited) { throw "Initial hidden GUI terminated unexpectedly" }
+            $second = Start-Process -FilePath $exe -ArgumentList '--instance-test-hidden' -PassThru
+            if (-not $first.WaitForExit(15000)) { throw "Starting second EXE did not close first GUI" }
+            if ($first.ExitCode -ne 0) { throw "First GUI exited abnormally: $($first.ExitCode)" }
+            Start-Sleep -Milliseconds 800
+            $second.Refresh()
+            if ($second.HasExited) { throw "Replacement GUI unexpectedly exited" }
+            $third = Start-Process -FilePath $exe -ArgumentList '--instance-test-hidden' -PassThru
+            if (-not $second.WaitForExit(15000)) { throw "Starting third EXE did not close second GUI" }
+            Start-Sleep -Milliseconds 600
+            $third.Refresh()
+            if ($third.HasExited) { throw "Last GUI unexpectedly exited" }
+            Write-Host "PASS: hidden GUI 1 -> GUI 2 -> GUI 3, all replaced cleanly"
+          } finally {
+            foreach ($p in @($first,$second,$third)) {
+              if ($null -ne $p) {
+                $p.Refresh()
+                if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
+              }
+            }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: CurrentEarthWallpaper-Rust-Native-Preview
