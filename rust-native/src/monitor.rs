@@ -36,7 +36,7 @@ pub fn connected()->Result<Vec<Monitor>,String>{
     for i in 0..count.min(32){
         let path=unsafe{api.GetMonitorDevicePathAt(i).map_err(|e|e.to_string())?};
         let id=unsafe{path.to_string().map_err(|e|e.to_string())};
-        unsafe{CoTaskMemFree(Some(path.0 as *const std::ffi::c_void));}
+        unsafe{CoTaskMemFree(path.0 as *const std::ffi::c_void);}
         let id=id?;
         let id_wide=wide(&id);
         // S_FALSE for disconnected monitors; skip rather than overwriting them.
