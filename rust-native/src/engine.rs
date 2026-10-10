@@ -14,6 +14,7 @@ use crate::{config::{AppConfig,app_dir},http,imaging,sources::{self,SourceKind},
 pub struct CycleSourceCache{
     repeated:HashSet<String>,
     images:HashMap<String,PathBuf>,
+    observed:HashMap<String,String>,
 }
 impl CycleSourceCache{
     pub fn for_sources<'a>(sources:impl IntoIterator<Item=&'a str>)->Self{
@@ -23,10 +24,11 @@ impl CycleSourceCache{
             repeated:counts.into_iter().filter_map(|(name,n)|
                 (n>1).then_some(name)).collect(),
             images:HashMap::new(),
+            observed:HashMap::new(),
         }
     }
     fn find(&self,source:&str)->Option<&PathBuf>{self.images.get(source)}
-    fn store(&mut self,source:&str,input:&Path,folder:&Path)->Result<(),String>{
+    fn store(&mut self,source:&str,input:&Path,folder:&Path,observed_utc:Option<&str>)->Result<(),String>{
         if !self.repeated.contains(source)||self.images.contains_key(source){return Ok(());}
         let suffix=input.extension().and_then(|e|e.to_str()).unwrap_or("img");
         let filename=format!(".cew-{}-cycle-{}-{}.{}",
@@ -34,6 +36,7 @@ impl CycleSourceCache{
         let path=folder.join(filename);
         fs::copy(input,&path).map_err(|e|format!("Satellite cycle cache copy: {e}"))?;
         self.images.insert(source.into(),path);
+        if let Some(utc)=observed_utc {self.observed.insert(source.into(),utc.into());}
         Ok(())
     }
 }
@@ -49,7 +52,7 @@ impl Drop for CycleSourceCache{
 fn source_fingerprint(path:&Path,source:&str,scale:&str,watermark:bool,w:u32,h:u32)
     ->Result<String,String>{
     let mut hash=0xcbf29ce484222325u64;
-    for strval in [source,scale,if watermark{"watermark"}else{"clean"}]{
+    for strval in [source,scale,if watermark{"watermark-obs-upd-v2"}else{"clean"}]{
         for b in strval.bytes().chain(std::iter::once(0)){
             hash=(hash^u64::from(b)).wrapping_mul(0x100000001b3);
         }
@@ -160,6 +163,10 @@ fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,re
     let cached_input=source_cache.as_deref()
         .and_then(|cache|cache.find(source.name)).cloned();
     let fresh_download=cached_input.is_none();
+    // Preserve the exact provider observation time when the same raw image
+    // is reused for another desktop / monitor during a scheduled cycle.
+    let mut observed_utc=source_cache.as_deref()
+        .and_then(|cache|cache.observed.get(source.name)).cloned();
     let input=if let Some(path)=cached_input {
         log(format!("复用本周期已下载的 {} 原图（不再次发起网络请求）。",source.name));
         path
@@ -194,6 +201,7 @@ fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,re
                                 if index>0 {
                                     log(format!("Meteosat 已回退到可用观测时间 (UTC): {time}"));
                                 }
+                                observed_utc=Some(time.clone());
                                 downloaded=true;
                                 break;
                             },
@@ -224,6 +232,8 @@ fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,re
                         }
                     }
                     if !success{return Err(format!("Both NOAA GeoColor sizes failed: {error}"));}
+                    // The fixed-size NOAA CDN URL carries no acquisition time.
+                    // Its HTTP Last-Modified is a publication time, NOT an Obs time.
                 },
                 SourceKind::Epic=>{
                     check(cancel)?;
@@ -234,6 +244,7 @@ fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,re
                     log(format!("NASA EPIC latest observation (UTC): {}; images are delayed by provider",
                         selected.observed_at));
                     download_image(&selected.url,&image_path,70*1048576,cancel,&mut log)?;
+                    observed_utc=Some(selected.observed_at);
                 },
                 _=>unreachable!()
             }
@@ -245,6 +256,9 @@ fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,re
             log(format!("Fetch NICT Himawari timestamp: {url}"));
             let json=http::get_text(&url,512*1024)?;
             let links=sources::himawari_tiles(&json)?;
+            // NICT latest.json date is the timestamp used for these 16 tiles.
+            observed_utc=serde_json::from_str::<serde_json::Value>(&json).ok()
+                .and_then(|metadata|metadata["date"].as_str().map(str::to_owned));
             let output=temp_file(&folder,"himawari.bmp",&mut scratch);
             let mut bgra=vec![0u8;2200*2200*4];
             for (i,url) in links.iter().enumerate(){
@@ -290,14 +304,22 @@ fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,re
     // multiple profiles in this cycle. Per-pair rendering remains independent.
     if fresh_download {
         if let Some(cache)=source_cache.as_deref_mut(){
-            cache.store(source.name,&input,&folder)?;
+            cache.store(source.name,&input,&folder,observed_utc.as_deref())?;
         }
     }
     // Render to a throwaway scratch path. Publish a stable per-desktop+monitor
     // file only after the image is completely written.
     let path=temp_file(&folder,"render.bmp",&mut scratch);
     log(format!("Compose desktop BMP: {}x{}",w,h));
-    wallpaper::compose(&path,w,h,&image,cfg.watermark_on)?;
+    if cfg.watermark_on {
+        if observed_utc.is_none() {
+            log(format!("{}: provider does not expose verified acquisition time; Obs --",source.name));
+        }else {
+            log(format!("{} observation UTC for watermark: {}",source.name,
+                observed_utc.as_deref().unwrap_or("")));
+        }
+    }
+    wallpaper::compose_observed(&path,w,h,&image,cfg.watermark_on,observed_utc.as_deref())?;
     check(cancel)?;
     // Background refresh can target inactive virtual desktops. Check that this
     // GUID still exists, not that it is the foreground desktop.
@@ -378,6 +400,20 @@ mod cycle_cache_tests {
         assert_ne!(original,source_fingerprint(&p,"NASA EPIC","黄金比例",false,1600,900).unwrap());
         fs::remove_file(&p).unwrap();
     }
+
+    #[test]fn cycle_cache_retains_provider_observation_time(){
+        let dir=std::env::temp_dir().join(format!("cew-obstime-{}",std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let src=dir.join("raw.jpg");
+        fs::write(&src,b"raw pixels").unwrap();
+        {
+            let mut cache=CycleSourceCache::for_sources(["NASA EPIC","NASA EPIC"]);
+            cache.store("NASA EPIC",&src,&dir,Some("2026-10-10 10:50:00")).unwrap();
+            assert_eq!(cache.observed.get("NASA EPIC").map(String::as_str),
+                Some("2026-10-10 10:50:00"));
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
     #[test]fn same_source_reused_and_temp_files_cleaned(){
         let dir=std::env::temp_dir().join(format!("cew-cycle-cache-{}",std::process::id()));
         fs::create_dir_all(&dir).unwrap();
@@ -388,12 +424,12 @@ mod cycle_cache_tests {
             let mut cache=CycleSourceCache::for_sources(["GOES-East","GOES-East","NASA EPIC"]);
             assert!(cache.repeated.contains("GOES-East"));
             assert!(!cache.repeated.contains("NASA EPIC"));
-            cache.store("GOES-East",&src,&dir).unwrap();
+            cache.store("GOES-East",&src,&dir,None).unwrap();
             saved=cache.find("GOES-East").unwrap().clone();
             assert!(saved.exists());
-            cache.store("GOES-East",&src,&dir).unwrap();
+            cache.store("GOES-East",&src,&dir,None).unwrap();
             assert_eq!(cache.images.len(),1);
-            cache.store("NASA EPIC",&src,&dir).unwrap();
+            cache.store("NASA EPIC",&src,&dir,None).unwrap();
             assert_eq!(cache.images.len(),1);
         }
         assert!(!saved.exists());
