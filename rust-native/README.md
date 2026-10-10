@@ -1,4 +1,4 @@
-# Current Earth Wallpaper v1.1.0 (Rust Native · Windows)
+# Current Earth Wallpaper v1.1.1-rc.1 (Rust Native · Windows)
 
 Standalone Windows x64 application with native Win32 UI, WinHTTP + Windows Imaging
 Component (WIC). The **Python main branch is untouched**. Rust source and releases
@@ -97,7 +97,7 @@ testing with the user's actual display hardware.
 
 ## Usage
 
-Download the portable v1.1.0 EXE from the GitHub Release. No Python environment is needed.
+The v1.1.1-rc.1 bugfix preview is available as a Windows CI artifact. The existing v1.1.0 GitHub Release remains unchanged. No Python environment is needed.
 The v1.1.0 EXE normally shuts down a previous hidden/running instance on relaunch.
 When upgrading from much older releases, exit the old app if replacement is blocked.
 
