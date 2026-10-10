@@ -62,10 +62,11 @@ jobs:
         shell: pwsh
         continue-on-error: true
         run: |
-          $out = & "target/release/CurrentEarthWallpaperNative.exe" --self-test-meteosat-time 2>&1
-          $exitCode = $LASTEXITCODE
-          $out | Write-Host
-          if ($exitCode -ne 0) { throw "EUMETSAT WMS latest TIME lookup failed" }
+          $p = Start-Process -FilePath "target/release/CurrentEarthWallpaperNative.exe" -ArgumentList "--self-test-meteosat-time" -PassThru -Wait
+          if (Test-Path "target/release/meteosat-probe.json") {
+            Get-Content "target/release/meteosat-probe.json" | Write-Host
+          } else { throw "Meteosat probe report missing" }
+          if ($p.ExitCode -ne 0) { throw "EUMETSAT WMS latest TIME lookup or image decoding failed" }
       - name: Read-only virtual desktop registry diagnostic
         shell: pwsh
         run: |
@@ -146,6 +147,7 @@ jobs:
             rust-native/target/release/memory-idle.json
             rust-native/target/release/memory-render.json
             rust-native/target/release/live-goes.json
+            rust-native/target/release/meteosat-probe.json
             rust-native/target/release/fy4b-https.json
             rust-native/target/release/virtual-desktop-probe.json
           retention-days: 30
