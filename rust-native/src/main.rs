@@ -22,7 +22,7 @@ mod maintenance;
 
 #[cfg(not(windows))]
 fn main() {
-    eprintln!("Current Earth Wallpaper v1.1.0 supports Windows; unit tests are portable.");
+    eprintln!("Current Earth Wallpaper v1.1.1 supports Windows; unit tests are portable.");
 }
 
 #[cfg(windows)]
