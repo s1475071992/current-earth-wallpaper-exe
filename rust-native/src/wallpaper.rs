@@ -4,7 +4,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetSystemMetrics,SM_CXSCREEN,SM_CYSCREEN,SystemParametersInfoW,SPI_SETDESKWALLPAPER,
     SPIF_UPDATEINIFILE,SPIF_SENDCHANGE,
 };
-use windows_sys::Win32::System::SystemInformation::GetLocalTime;
+use windows_sys::Win32::System::SystemInformation::GetSystemTime;
 use windows_sys::Win32::Foundation::SYSTEMTIME;
 use crate::imaging::Pixels;
 
@@ -74,22 +74,78 @@ fn glyph(c:char)->[u8;7]{
         '4'=>[2,6,10,18,31,2,2], '5'=>[31,16,16,30,1,1,30],
         '6'=>[14,16,16,30,17,17,14], '7'=>[31,1,2,4,8,8,8],
         '8'=>[14,17,17,14,17,17,14], '9'=>[14,17,17,15,1,1,14],
-        '/'=>[1,1,2,4,8,16,16], ':'=>[0,4,4,0,4,4,0],
-        '-'=>[0,0,0,31,0,0,0], _=>[0;7]
+        ':'=>[0,4,4,0,4,4,0], '-'=>[0,0,0,31,0,0,0],
+        'O'=>[14,17,17,17,17,17,14], 'b'=>[16,16,30,17,17,17,30],
+        's'=>[0,0,15,16,14,1,30], 'U'=>[17,17,17,17,17,17,14],
+        'p'=>[0,0,30,17,30,16,16], 'd'=>[1,1,15,17,17,17,15],
+        'T'=>[31,4,4,4,4,4,4], 'C'=>[14,17,16,16,16,17,14],
+        '+'=>[0,4,4,31,4,4,0],
+        _=>[0;7],
     }
 }
-fn time_mark()->String {
-    let mut t: SYSTEMTIME=unsafe{std::mem::zeroed()};
-    unsafe{GetLocalTime(&mut t);}
-    format!("{:04}/{:02}/{:02} {:02}:{:02}:{:02}",t.wYear,t.wMonth,t.wDay,t.wHour,t.wMinute,t.wSecond)
+fn month_days(year:u32,month:u32)->u32 {
+    match month {
+        1|3|5|7|8|10|12=>31, 4|6|9|11=>30,
+        2=>if year%4==0 && (year%100!=0 || year%400==0){29}else{28},
+        _=>0,
+    }
+}
+/// Provider observation timestamps are UTC (ISO-8601 or NASA/NICT's
+/// "YYYY-MM-DD HH:MM:SS"). Display fixed UTC+8, never the PC's ambiguous
+/// local timezone. Reject invalid calendar dates instead of inventing them.
+pub fn observed_utc8(utc:&str)->Option<String>{
+    let b=utc.as_bytes();
+    if b.len()<19 || b[4]!=b'-' || b[7]!=b'-'
+        || !matches!(b[10],b'T'|b' ') || b[13]!=b':' || b[16]!=b':'
+        || !b.iter().take(19).enumerate().all(|(i,v)|
+            [4,7,10,13,16].contains(&i)||v.is_ascii_digit()) {
+        return None;
+    }
+    if b.len()>19 && !utc[19..].starts_with('Z') && !utc[19..].starts_with('.') {
+        return None;
+    }
+    let part=|start,end| utc[start..end].parse::<u32>().ok();
+    let (mut year,mut month,mut day)=(part(0,4)?,part(5,7)?,part(8,10)?);
+    let (mut hour,minute,second)=(part(11,13)?,part(14,16)?,part(17,19)?);
+    if year<1900 || month==0 || day==0 || day>month_days(year,month)
+        || hour>23 || minute>59 || second>59{return None;}
+    hour+=8;
+    if hour>=24 {
+        hour-=24;
+        day+=1;
+        if day>month_days(year,month){
+            day=1;month+=1;
+            if month>12{month=1;year+=1;}
+        }
+    }
+    Some(format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}"))
+}
+fn update_time_utc8()->String{
+    let mut t:SYSTEMTIME=unsafe{std::mem::zeroed()};
+    unsafe{GetSystemTime(&mut t);}
+    let utc=format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        t.wYear,t.wMonth,t.wDay,t.wHour,t.wMinute,t.wSecond);
+    let date=observed_utc8(&utc).unwrap_or_else(||"---- -- -- --:--".into());
+    format!("{date}:{:02} UTC+8",t.wSecond)
+}
+fn watermark_label(observed_utc:Option<&str>,updated:&str)->String {
+    let observation=observed_utc.and_then(observed_utc8)
+        .map(|t|format!("{t} UTC+8")).unwrap_or_else(||"--".into());
+    format!("Obs {observation} Upd {updated}")
 }
 fn draw_watermark_row(row:&mut [u8],screen_y:u32,w:u32,h:u32,text:&str){
-    let px_scale=(h/500).max(1);
+    // 5x7 bitmap font, 1-2x scale, no layout padding on the right or bottom.
+    // This is ~75% white alpha over the original background (not opaque white).
+    let mut px_scale=(h/800).clamp(1,2);
+    let count=text.chars().count() as u32;
+    while px_scale>1 && count.saturating_mul(6).saturating_mul(px_scale)>w {
+        px_scale-=1;
+    }
     let char_w=6*px_scale;
-    let text_w=text.chars().count() as u32*char_w;
-    let start_x=w.saturating_sub(text_w+h/35);
-    let start_y=h.saturating_sub(8*px_scale+h/28);
-    if screen_y<start_y||screen_y>=start_y+7*px_scale{return}
+    let text_w=count.saturating_sub(1)*char_w+5*px_scale;
+    let start_x=w.saturating_sub(text_w);
+    let start_y=h.saturating_sub(7*px_scale);
+    if screen_y<start_y||screen_y>=h{return}
     let glyph_y=((screen_y-start_y)/px_scale) as usize;
     for (i,c) in text.chars().enumerate(){
         let bits=glyph(c)[glyph_y];
@@ -99,12 +155,21 @@ fn draw_watermark_row(row:&mut [u8],screen_y:u32,w:u32,h:u32,text:&str){
             for dx in 0..px_scale{
                 if x+dx>=w{continue}
                 let p=(x+dx) as usize*4;
-                row[p..p+4].copy_from_slice(&[255,255,255,255]);
+                for color in &mut row[p..p+3] {
+                    *color=((*color as u16*64+255*191+127)/255) as u8;
+                }
+                row[p+3]=255;
             }
         }
     }
 }
+/// Keep the existing API for offline renderer tests and callers without
+/// available observation metadata. Unknown observation is displayed as "--".
 pub fn compose(dest:&Path,w:u32,h:u32,earth:&Pixels,watermark:bool)->Result<(),String>{
+    compose_observed(dest,w,h,earth,watermark,None)
+}
+pub fn compose_observed(dest:&Path,w:u32,h:u32,earth:&Pixels,watermark:bool,
+    observed_utc:Option<&str>)->Result<(),String>{
     let d=earth.width.min(earth.height);
     if d==0||d>w||d>h{return Err("Invalid Earth size".into())}
     let x0=(w-d)/2; let y0=(h-d)/2;
@@ -112,7 +177,9 @@ pub fn compose(dest:&Path,w:u32,h:u32,earth:&Pixels,watermark:bool)->Result<(),S
     header(&mut bmp,w,h)?;
     let mut row=vec![0u8;w as usize*4];
     let rad=d as i64;
-    let mark=if watermark{time_mark()}else{String::new()};
+    let mark=if watermark {
+        watermark_label(observed_utc,&update_time_utc8())
+    }else{String::new()};
     for y in (0..h).rev(){
         row.fill(0);
         if y>=y0&&y<y0+d{
@@ -176,6 +243,24 @@ mod tests{
     use super::*;
     #[test]fn size_modes(){assert_eq!(diameter(1000,"铺满屏幕"),1000);
         assert_eq!(diameter(1000,"黄金比例"),618);}
+
+    #[test]fn timestamp_metadata_utc8_and_rollover(){
+        assert_eq!(observed_utc8("2026-10-10T10:50:00.000Z").unwrap(),"2026-10-10 18:50");
+        assert_eq!(observed_utc8("2026-10-07 21:49:33").unwrap(),"2026-10-08 05:49");
+        assert_eq!(observed_utc8("2026-12-31T18:01:00Z").unwrap(),"2027-01-01 02:01");
+        assert_eq!(observed_utc8("2024-02-29T23:40:00Z").unwrap(),"2024-03-01 07:40");
+        assert!(observed_utc8("2026-02-30T18:20:00Z").is_none());
+        assert_eq!(watermark_label(Some("2026-10-10T10:50:00Z"),"2026-10-10 19:03:18 UTC+8"),
+            "Obs 2026-10-10 18:50 UTC+8 Upd 2026-10-10 19:03:18 UTC+8");
+        assert!(watermark_label(None,"2026-10-10 19:03:18 UTC+8").starts_with("Obs -- Upd "));
+    }
+    #[test]fn watermark_is_quiet_and_has_zero_edge_padding(){
+        let mut row=vec![0u8;1100*4];
+        let t="Obs 2026-10-10 18:50 UTC+8 Upd 2026-10-10 19:03:18 UTC+8";
+        draw_watermark_row(&mut row,1599,1100,1600,t);
+        assert_eq!(&row[(1100-2)*4..(1100-2)*4+3], &[191,191,191]);
+        assert_eq!(&row[0..3], &[0,0,0]);
+    }
     #[test]fn bmp_header_and_row_orientation(){
         let p=std::env::temp_dir().join(format!("cew-test-{}.bmp",std::process::id()));
         let pixels=[1,2,3,255,4,5,6,255, 7,8,9,255,10,11,12,255];
