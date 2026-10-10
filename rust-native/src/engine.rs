@@ -1,6 +1,6 @@
 //! End-to-end provider pipeline. Per-stage events are sent to the GUI and a local log.
 use std::{
-    path::{Path, PathBuf}, fs,
+    path::{Path, PathBuf}, fs, io::Read,
     collections::{HashMap,HashSet},
     sync::atomic::{AtomicBool,Ordering},
     time::{Instant,SystemTime,UNIX_EPOCH},
@@ -41,6 +41,30 @@ impl Drop for CycleSourceCache{
     fn drop(&mut self){
         for path in self.images.values(){let _=fs::remove_file(path);}
     }
+}
+
+/// Fingerprint the actual received satellite file along with render settings.
+/// If the provider is still serving yesterday's image, it must not appear as
+/// a new satellite photograph just because a timer tick fired.
+fn source_fingerprint(path:&Path,source:&str,scale:&str,watermark:bool,w:u32,h:u32)
+    ->Result<String,String>{
+    let mut hash=0xcbf29ce484222325u64;
+    for strval in [source,scale,if watermark{"watermark"}else{"clean"}]{
+        for b in strval.bytes().chain(std::iter::once(0)){
+            hash=(hash^u64::from(b)).wrapping_mul(0x100000001b3);
+        }
+    }
+    for b in w.to_le_bytes().into_iter().chain(h.to_le_bytes()){
+        hash=(hash^u64::from(b)).wrapping_mul(0x100000001b3);
+    }
+    let mut input=fs::File::open(path).map_err(|e|e.to_string())?;
+    let mut buf=[0u8;65536];
+    loop{
+        let n=input.read(&mut buf).map_err(|e|e.to_string())?;
+        if n==0{break;}
+        for &byte in &buf[..n]{hash=(hash^u64::from(byte)).wrapping_mul(0x100000001b3);}
+    }
+    Ok(format!("{hash:016x}"))
 }
 
 fn display_hash(input:&str)->u64{
@@ -211,6 +235,9 @@ fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,re
         .map_err(|e|format!("WIC image decode failed: {e}"))?;
     log(format!("WIC decode complete ({:.1}s)",started.elapsed().as_secs_f32()));
     check(cancel)?;
+    let fingerprint=if matches!(source.kind,SourceKind::Epic|SourceKind::Wms){
+        Some(source_fingerprint(&input,source.name,&cfg.scale_mode,cfg.watermark_on,w,h)?)
+    }else{None};
     // Cache only validated original satellite files and only sources used by
     // multiple profiles in this cycle. Per-pair rendering remains independent.
     if fresh_download {
@@ -236,7 +263,14 @@ fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,re
     if render_only {
         let id=desktop.ok_or("Missing virtual desktop in pair renderer")?;
         let m=display.ok_or("Missing physical monitor in pair renderer")?;
-        let stable=crate::virtual_cache::save(&folder,Some(id),Some(m),&cfg.image_source,&path)?;
+        let unchanged=fingerprint.as_deref().is_some_and(|fingerprint|
+            crate::virtual_cache::unchanged_image(&folder,Some(id),Some(m),
+                &cfg.image_source,fingerprint).is_some());
+        let stable=crate::virtual_cache::save_identified(&folder,Some(id),Some(m),
+            &cfg.image_source,&path,fingerprint.as_deref())?;
+        if unchanged {
+            log(format!("卫星图源 {} 返回相同照片：保留现有壁纸，不覆盖 BMP。",source.name));
+        }
         log(format!("Saved pair image: desktop={} monitor={} source={} path={}",
             id,m.id,cfg.image_source,stable.display()));
         return Ok(stable);
@@ -249,7 +283,12 @@ fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,re
         // image file. Multiple monitors with one virtual-desktop wallpaper use 'all'.
         let found=crate::monitor::connected().unwrap_or_default();
         let sole=if found.len()==1{found.first()}else{None};
-        let stable=crate::virtual_cache::save(&folder,Some(id),sole,&cfg.image_source,&path)?;
+        let unchanged=fingerprint.as_deref().is_some_and(|fingerprint|
+            crate::virtual_cache::unchanged_image(&folder,Some(id),sole,
+                &cfg.image_source,fingerprint).is_some());
+        let stable=crate::virtual_cache::save_identified(&folder,Some(id),sole,
+            &cfg.image_source,&path,fingerprint.as_deref())?;
+        if unchanged{log(format!("卫星图源 {} 尚无新图：继续使用已有壁纸。",source.name));}
         check(cancel)?;
         if !crate::virtual_desktop::snapshot()?.ids.iter().any(|known|known==id){
             return Err(format!("Desktop {id} no longer exists; skip assignment"));
@@ -259,7 +298,12 @@ fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,re
         log(format!("Assigned desktop {} in {:.1}s",id,begin.elapsed().as_secs_f32()));
         Ok(stable)
     }else{
-        let stable=crate::virtual_cache::save(&folder,None,display,&cfg.image_source,&path)?;
+        let unchanged=fingerprint.as_deref().is_some_and(|fingerprint|
+            crate::virtual_cache::unchanged_image(&folder,None,display,
+                &cfg.image_source,fingerprint).is_some());
+        let stable=crate::virtual_cache::save_identified(&folder,None,display,
+            &cfg.image_source,&path,fingerprint.as_deref())?;
+        if unchanged{log(format!("卫星图源 {} 尚无新图：继续使用已有壁纸。",source.name));}
         check(cancel)?;
         log(format!("Windows: apply wallpaper from {}",stable.display()));
         match display{
