@@ -1139,6 +1139,12 @@ fn live_meteosat_time_probe(){
         "image_decoded":result.as_ref().ok().map(|r|r.1.as_str()),
         "error":result.as_ref().err(),
     });
+    if let Ok(exe)=std::env::current_exe(){
+        if let Some(dir)=exe.parent(){
+            let _=std::fs::write(dir.join("meteosat-probe.json"),
+                serde_json::to_vec_pretty(&report).unwrap_or_default());
+        }
+    }
     println!("{report}");
     if result.is_err(){std::process::exit(2);}
 }
