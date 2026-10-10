@@ -258,8 +258,13 @@ mod tests{
         let mut row=vec![0u8;1100*4];
         let t="Obs 2026-10-10 18:50 UTC+8 Upd 2026-10-10 19:03:18 UTC+8";
         draw_watermark_row(&mut row,1599,1100,1600,t);
-        assert_eq!(&row[(1100-2)*4..(1100-2)*4+3], &[191,191,191]);
+        // The final "8" has a blank outer column in its bottom glyph row.
+        assert_eq!(&row[(1100-4)*4..(1100-4)*4+3], &[191,191,191]);
         assert_eq!(&row[0..3], &[0,0,0]);
+        row.fill(0);
+        // Its center row has a lit rightmost column: no extra right padding.
+        draw_watermark_row(&mut row,1595,1100,1600,t);
+        assert_eq!(&row[(1100-1)*4..1100*4-1], &[191,191,191]);
     }
     #[test]fn bmp_header_and_row_orientation(){
         let p=std::env::temp_dir().join(format!("cew-test-{}.bmp",std::process::id()));
