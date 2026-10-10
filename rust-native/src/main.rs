@@ -1120,17 +1120,24 @@ fn live_meteosat_time_probe(){
     let result=(||->Result<(String,String),String>{
         let cap=http::get_text(&request,24*1048576)?;
         let latest=sources::meteosat_latest_time(&cap)?;
-        let image_url=sources::wms_url_at(&latest)?;
         let path=std::env::temp_dir().join(format!("cew-wms-{}-latest.jpg",std::process::id()));
-        let decoded=(||->Result<String,String>{
-            http::download(&image_url,&path,70*1048576)?;
-            let pixels=imaging::load_scaled(&path,320,None)?;
-            Ok(format!("WMS JPEG WIC {}x{} / {} bytes",
-                pixels.width,pixels.height,
-                std::fs::metadata(&path).map_err(|e|e.to_string())?.len()))
-        })();
-        let _=std::fs::remove_file(path);
-        Ok((latest,decoded?))
+        let mut last_error=String::new();
+        for time in sources::wms_retry_times(&latest)? {
+            let image_url=sources::wms_url_at(&time)?;
+            let decoded=(||->Result<String,String>{
+                http::download(&image_url,&path,70*1048576)?;
+                let pixels=imaging::load_scaled(&path,320,None)?;
+                Ok(format!("WMS JPEG WIC {}x{} / {} bytes; selected UTC: {time}",
+                    pixels.width,pixels.height,
+                    std::fs::metadata(&path).map_err(|e|e.to_string())?.len()))
+            })();
+            let _=std::fs::remove_file(&path);
+            match decoded {
+                Ok(info)=>return Ok((latest,info)),
+                Err(error)=>last_error=format!("{time}: {error}"),
+            }
+        }
+        Err(format!("Meteosat WMS recent time slots unavailable: {last_error}"))
     })();
     let report=serde_json::json!({
         "source":"Meteosat-12 GeoColour","requires_auth":false,
