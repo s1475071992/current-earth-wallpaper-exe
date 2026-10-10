@@ -126,7 +126,16 @@ fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,re
             let image_path=temp_file(&folder,"download.jpg",&mut scratch);
             match source.kind {
                 SourceKind::Direct|SourceKind::Wms=>{
-                    let url=if source.kind==SourceKind::Wms {sources::wms_url()}else{source.home_url.to_string()};
+                    let url=if source.kind==SourceKind::Wms {
+                        check(cancel)?;
+                        log("EUMETSAT: query latest published Meteosat-12 WMS observation time".into());
+                        let cap=http::get_text(&sources::wms_capabilities_url(),24*1048576)
+                            .map_err(|e|format!("Meteosat GetCapabilities failed: {e}"))?;
+                        check(cancel)?;
+                        let latest=sources::meteosat_latest_time(&cap)?;
+                        log(format!("Meteosat-12 actual observation (UTC): {latest}"));
+                        sources::wms_url_at(&latest)?
+                    }else{source.home_url.to_string()};
                     download_image(&url,&image_path,70*1048576,cancel,&mut log)?;
                 },
                 SourceKind::Goes=>{
@@ -149,8 +158,10 @@ fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,re
                     log(format!("Fetch NASA EPIC metadata: {}",source.home_url));
                     let json=http::get_text(source.home_url,2*1048576)?;
                     log(format!("NASA metadata: {} bytes",json.len()));
-                    let url=sources::epic_image_url(&json)?;
-                    download_image(&url,&image_path,70*1048576,cancel,&mut log)?;
+                    let selected=sources::epic_latest_image(&json)?;
+                    log(format!("NASA EPIC latest observation (UTC): {}; images are delayed by provider",
+                        selected.observed_at));
+                    download_image(&selected.url,&image_path,70*1048576,cancel,&mut log)?;
                 },
                 _=>unreachable!()
             }
