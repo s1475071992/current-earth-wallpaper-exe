@@ -427,7 +427,7 @@ mod cycle_cache_tests {
             cache.store("GOES-East",&src,&dir,None).unwrap();
             saved=cache.find("GOES-East").unwrap().clone();
             assert!(saved.exists());
-            cache.store("GOES-East",&src,&dir).unwrap();
+            cache.store("GOES-East",&src,&dir,None).unwrap();
             assert_eq!(cache.images.len(),1);
             cache.store("NASA EPIC",&src,&dir,None).unwrap();
             assert_eq!(cache.images.len(),1);
