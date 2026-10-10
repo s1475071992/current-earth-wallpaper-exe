@@ -318,6 +318,18 @@ fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,re
 #[cfg(test)]
 mod cycle_cache_tests {
     use super::*;
+    #[test]fn image_signature_detects_server_changes_and_respects_settings(){
+        let p=std::env::temp_dir().join(format!("cew-fingerprint-{}.jpg",std::process::id()));
+        fs::write(&p,b"IMAGE A").unwrap();
+        let original=source_fingerprint(&p,"NASA EPIC","黄金比例",false,1600,900).unwrap();
+        assert_eq!(original,source_fingerprint(&p,"NASA EPIC","黄金比例",false,1600,900).unwrap());
+        assert_ne!(original,source_fingerprint(&p,"NASA EPIC","铺满屏幕",false,1600,900).unwrap());
+        assert_ne!(original,source_fingerprint(&p,"NASA EPIC","黄金比例",true,1600,900).unwrap());
+        assert_ne!(original,source_fingerprint(&p,"NASA EPIC","黄金比例",false,1920,1080).unwrap());
+        fs::write(&p,b"IMAGE B").unwrap();
+        assert_ne!(original,source_fingerprint(&p,"NASA EPIC","黄金比例",false,1600,900).unwrap());
+        fs::remove_file(&p).unwrap();
+    }
     #[test]fn same_source_reused_and_temp_files_cleaned(){
         let dir=std::env::temp_dir().join(format!("cew-cycle-cache-{}",std::process::id()));
         fs::create_dir_all(&dir).unwrap();
