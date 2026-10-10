@@ -27,7 +27,11 @@ pub fn by_name(name: &str) -> Source {
 }
 
 pub fn wms_url() -> String {
-    format!("{}?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=mtg_fd%3Argb_geocolour&STYLES=&FORMAT=image%2Fjpeg&SRS=EPSG%3A4326&BBOX=-77%2C-77%2C77%2C77&WIDTH=1600&HEIGHT=1600&TRANSPARENT=FALSE&BGCOLOR=0x000000", ALL[5].home_url)
+    // MTG full-disc imagery is in a geostationary projection. EPSG:4326
+    // reprojects it to a flat map, which can render incorrectly or cause
+    // expensive GetMap requests to fail with HTTP 500. Match EUMETView's
+    // known working AUTO:97004 request and keep a square Earth disc.
+    format!("{}?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=mtg_fd%3Argb_geocolour&STYLES=&FORMAT=image%2Fjpeg&SRS=AUTO%3A97004%2C9001%2C0%2C0&BBOX=-6500000%2C-6500000%2C6500000%2C6500000&WIDTH=1600&HEIGHT=1600&TRANSPARENT=FALSE&BGCOLOR=0x000000", ALL[5].home_url)
 }
 
 #[derive(Debug,Clone,PartialEq,Eq)]
@@ -74,9 +78,68 @@ pub fn meteosat_latest_time(xml: &str) -> Result<String,String> {
 }
 
 pub fn wms_capabilities_url() -> String {
-    format!("{}?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetCapabilities&namespace=mtg_fd",
+    format!("{}?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetCapabilities&namespace=mtg_fd",
         ALL[5].home_url)
 }
+/// The last advertised MTG TIME sometimes returns HTTP 500 while GeoServer is
+/// still preparing it. Try at most three recent 10-minute slots, never an
+/// unlimited retry loop or an untimed request (which can return old imagery).
+pub fn wms_retry_times(latest: &str) -> Result<Vec<String>,String> {
+    let b=latest.as_bytes();
+    if !(20..=30).contains(&b.len()) || b[4]!=b'-' || b[7]!=b'-'
+        || b[10]!=b'T' || b[13]!=b':' || b[16]!=b':'
+        || !latest.ends_with('Z')
+        || !latest.bytes().all(|c|c.is_ascii_digit()
+            ||matches!(c,b'-'|b'T'|b':'|b'.'|b'Z'))
+        || (b.len()>20 && (b[19]!=b'.' || !b[20..b.len()-1].iter().all(u8::is_ascii_digit)))
+    {
+        return Err("Invalid Meteosat latest TIME".into());
+    }
+    let parse=|start,end| -> Result<u32,String> {
+        latest[start..end].parse::<u32>().map_err(|_|"Invalid Meteosat TIME".into())
+    };
+    let mut year=parse(0,4)?;
+    let mut month=parse(5,7)?;
+    let mut day=parse(8,10)?;
+    let mut hour=parse(11,13)?;
+    let mut minute=parse(14,16)?;
+    let second=parse(17,19)?;
+    fn days_in_month(year:u32,month:u32)->u32{
+        match month {
+            1|3|5|7|8|10|12=>31, 4|6|9|11=>30,
+            2=>if year%4==0 && (year%100!=0 || year%400==0){29}else{28},
+            _=>0,
+        }
+    }
+    if year<1900 || month==0 || day==0 || day>days_in_month(year,month)
+        || hour>23 || minute>59 || second>59 {
+        return Err("Invalid Meteosat TIME calendar date".into());
+    }
+    let mut times=vec![latest.to_string()];
+    for _ in 0..2 {
+        if minute>=10 {minute-=10;}
+        else {
+            minute+=50;
+            if hour>0 {hour-=1;}
+            else {
+                hour=23;
+                if day>1 {day-=1;}
+                else {
+                    if month>1 {month-=1;}
+                    else {
+                        if year<=1900 {break;}
+                        year-=1;month=12;
+                    }
+                    day=days_in_month(year,month);
+                }
+            }
+        }
+        times.push(format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}{}",
+            &latest[16..]));
+    }
+    Ok(times)
+}
+
 pub fn wms_url_at(time: &str) -> Result<String,String> {
     // Treat provider metadata as untrusted input.
     if time.len()<20||time.len()>30||!time.ends_with('Z')
@@ -201,6 +264,28 @@ mod tests {
         let range=r#"<Layer><Name>mtg_fd:rgb_geocolour</Name><Dimension name='time' units='ISO8601'>2026-10-08T10:00:00Z/2026-10-09T11:20:00Z/PT10M</Dimension></Layer>"#;
         assert_eq!(meteosat_latest_time(range).unwrap(),"2026-10-09T11:20:00Z");
         assert!(meteosat_latest_time("<Layer><Name>mtg_fd:rgb_geocolour</Name></Layer>").is_err());
+    }
+    #[test] fn wms_uses_geostationary_full_disc_projection(){
+        let url=wms_url();
+        assert!(url.contains("VERSION=1.3.0"));
+        assert!(url.contains("SRS=AUTO%3A97004%2C9001%2C0%2C0"));
+        assert!(url.contains("BBOX=-6500000%2C-6500000%2C6500000%2C6500000"));
+        assert!(!url.contains("EPSG%3A4326"));
+        assert!(!url.contains("TIME="));
+    }
+    #[test] fn wms_retry_slots_keep_utc_fraction_and_cross_month_boundaries(){
+        assert_eq!(wms_retry_times("2026-10-10T10:40:00.000Z").unwrap(),
+            vec!["2026-10-10T10:40:00.000Z",
+                 "2026-10-10T10:30:00.000Z",
+                 "2026-10-10T10:20:00.000Z"]);
+        assert_eq!(wms_retry_times("2026-03-01T00:10:00Z").unwrap(),
+            vec!["2026-03-01T00:10:00Z",
+                 "2026-03-01T00:00:00Z",
+                 "2026-02-28T23:50:00Z"]);
+        assert_eq!(wms_retry_times("2024-03-01T00:00:00Z").unwrap()[1],
+            "2024-02-29T23:50:00Z");
+        assert!(wms_retry_times("2026-10-10T10:40:00Z&LAYERS=bad").is_err());
+        assert!(wms_retry_times("2026-02-30T10:40:00Z").is_err());
     }
     #[test]fn epic_reports_observation_date(){
         let data=r#"[{"image":"epic_1b_20261008000000","date":"2026-10-08 00:00:00"},{"image":"epic_1b_20261008120000","date":"2026-10-08 12:00:00"}]"#;
