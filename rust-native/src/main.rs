@@ -1115,6 +1115,20 @@ fn live_goes_probe(){
 }
 
 #[cfg(windows)]
+fn live_meteosat_time_probe(){
+    let request=sources::wms_capabilities_url();
+    let result=http::get_text(&request,24*1048576)
+        .and_then(|xml|sources::meteosat_latest_time(&xml));
+    let report=serde_json::json!({
+        "source":"Meteosat-12 GeoColour","requires_auth":false,
+        "ok":result.is_ok(),"latest_utc":result.as_ref().ok(),
+        "error":result.as_ref().err(),
+    });
+    println!("{report}");
+    if result.is_err(){std::process::exit(2);}
+}
+
+#[cfg(windows)]
 fn live_fy4b_https_probe(){
     let url=sources::ALL[0].home_url;
     let tmp=std::env::temp_dir().join(format!("cew-https-fy4b-{}.jpg",std::process::id()));
@@ -1184,6 +1198,7 @@ fn main() {
     if std::env::args().any(|arg|arg=="--virtual-desktop-probe") {virtual_desktop_probe();return;}
     if std::env::args().any(|arg|arg=="--self-test-goes") {live_goes_probe();return;}
     if std::env::args().any(|arg|arg=="--self-test-fy4b-https") {live_fy4b_https_probe();return;}
+    if std::env::args().any(|arg|arg=="--self-test-meteosat-time") {live_meteosat_time_probe();return;}
     if std::env::args().any(|arg|arg=="--self-test-render"){
         let p=std::env::temp_dir().join(format!("cew_test_{}.bmp",std::process::id()));
         let out=std::env::temp_dir().join(format!("cew_render_{}.bmp",std::process::id()));
