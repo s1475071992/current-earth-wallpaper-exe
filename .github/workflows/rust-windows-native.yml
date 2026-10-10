@@ -58,6 +58,14 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "FY4B HTTPS endpoint unavailable or WIC decode failed - investigate before stable release" }
       - name: Cargo clippy static analysis
         run: cargo clippy --all-targets
+      - name: Live Meteosat WMS latest-observation metadata diagnostic
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $out = & "target/release/CurrentEarthWallpaperNative.exe" --self-test-meteosat-time 2>&1
+          $exitCode = $LASTEXITCODE
+          $out | Write-Host
+          if ($exitCode -ne 0) { throw "EUMETSAT WMS latest TIME lookup failed" }
       - name: Read-only virtual desktop registry diagnostic
         shell: pwsh
         run: |
