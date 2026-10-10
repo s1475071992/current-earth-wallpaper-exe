@@ -5,6 +5,11 @@ on:
     paths:
       - 'rust-native/**'
       - '.github/workflows/rust-windows-native.yml'
+  pull_request:
+    branches: [rust-windows-native]
+    paths:
+      - 'rust-native/**'
+      - '.github/workflows/rust-windows-native.yml'
   workflow_dispatch:
 permissions:
   contents: read
