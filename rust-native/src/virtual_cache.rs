@@ -118,6 +118,11 @@ pub fn save(folder:&Path,id:Option<&str>,monitor:Option<&Monitor>,source:&str,re
 pub fn save_identified(folder:&Path,id:Option<&str>,monitor:Option<&Monitor>,source:&str,
     rendered:&Path,image_fingerprint:Option<&str>)->Result<PathBuf,String>{
     fs::create_dir_all(folder).map_err(|e|e.to_string())?;
+    if let Some(fingerprint)=image_fingerprint{
+        if let Some(existing)=unchanged_image(folder,id,monitor,source,fingerprint){
+            return Ok(existing);
+        }
+    }
     let dest=target(folder,id,monitor);
     let tmp=folder.join(format!(".cew-{}-publish-{}.tmp",
         std::process::id(),hash(&dest.to_string_lossy())));
