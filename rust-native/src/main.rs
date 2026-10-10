@@ -1117,11 +1117,26 @@ fn live_goes_probe(){
 #[cfg(windows)]
 fn live_meteosat_time_probe(){
     let request=sources::wms_capabilities_url();
-    let result=http::get_text(&request,24*1048576)
-        .and_then(|xml|sources::meteosat_latest_time(&xml));
+    let result=(||->Result<(String,String),String>{
+        let cap=http::get_text(&request,24*1048576)?;
+        let latest=sources::meteosat_latest_time(&cap)?;
+        let image_url=sources::wms_url_at(&latest)?;
+        let path=std::env::temp_dir().join(format!("cew-wms-{}-latest.jpg",std::process::id()));
+        let decoded=(||->Result<String,String>{
+            http::download(&image_url,&path,70*1048576)?;
+            let pixels=imaging::load_scaled(&path,320,None)?;
+            Ok(format!("WMS JPEG WIC {}x{} / {} bytes",
+                pixels.width,pixels.height,
+                std::fs::metadata(&path).map_err(|e|e.to_string())?.len()))
+        })();
+        let _=std::fs::remove_file(path);
+        Ok((latest,decoded?))
+    })();
     let report=serde_json::json!({
         "source":"Meteosat-12 GeoColour","requires_auth":false,
-        "ok":result.is_ok(),"latest_utc":result.as_ref().ok(),
+        "ok":result.is_ok(),
+        "latest_utc":result.as_ref().ok().map(|r|r.0.as_str()),
+        "image_decoded":result.as_ref().ok().map(|r|r.1.as_str()),
         "error":result.as_ref().err(),
     });
     println!("{report}");
