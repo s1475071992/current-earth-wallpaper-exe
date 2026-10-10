@@ -30,7 +30,63 @@ pub fn wms_url() -> String {
     format!("{}?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=mtg_fd%3Argb_geocolour&STYLES=&FORMAT=image%2Fjpeg&SRS=EPSG%3A4326&BBOX=-77%2C-77%2C77%2C77&WIDTH=1600&HEIGHT=1600&TRANSPARENT=FALSE&BGCOLOR=0x000000", ALL[5].home_url)
 }
 
-pub fn epic_image_url(json: &str) -> Result<String, String> {
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct ObservedImage { pub url: String, pub observed_at: String }
+
+/// WMS without TIME can return a cached/default historic slice. Discover the
+/// latest published observation in the target layer's capabilities instead.
+/// The value must come from the server: never substitute our local clock.
+pub fn meteosat_latest_time(xml: &str) -> Result<String,String> {
+    let layer=xml.find("mtg_fd:rgb_geocolour").ok_or("Meteosat GeoColour WMS layer absent")?;
+    let rest=&xml[layer..];
+    let limit=rest.find("</Layer>").unwrap_or(rest.len()).min(750_000);
+    let scope=&rest[..limit];
+    let lower=scope.to_ascii_lowercase();
+    for tag in ["extent","dimension"] {
+        let mut start=0;
+        while let Some(pos)=lower[start..].find(&format!("<{tag}")) {
+            let pos=pos+start;
+            let Some(close)=lower[pos..].find('>') else{break};
+            let close=pos+close;
+            let attrs=&lower[pos..close];
+            start=close+1;
+            if !attrs.contains("name=\"time\"") && !attrs.contains("name='time'"){continue;}
+            let end_marker=format!("</{tag}>");
+            let Some(end)=lower[start..].find(&end_marker) else{continue};
+            let content=scope[start..start+end].trim();
+            // Explicit enumerated times or start/end/interval range.
+            let final_value=content.rsplit(',').next().unwrap_or(content).trim();
+            let final_value=if final_value.contains('/') {
+                final_value.split('/').nth(1).unwrap_or(final_value)
+            }else{final_value};
+            let timestamp=final_value.trim();
+            let valid=timestamp.len()>=20 && timestamp.len()<=30
+                && timestamp.as_bytes().get(4)==Some(&b'-')
+                && timestamp.as_bytes().get(7)==Some(&b'-')
+                && timestamp.as_bytes().get(10)==Some(&b'T')
+                && timestamp.ends_with('Z')
+                && timestamp.bytes().all(|c|c.is_ascii_digit()||
+                    matches!(c,b'-'|b'T'|b':'|b'.'|b'Z'));
+            if valid{return Ok(timestamp.into());}
+        }
+    }
+    Err("Meteosat WMS layer has no usable latest TIME in GetCapabilities".into())
+}
+
+pub fn wms_capabilities_url() -> String {
+    format!("{}?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetCapabilities&namespace=mtg_fd",
+        ALL[5].home_url)
+}
+pub fn wms_url_at(time: &str) -> Result<String,String> {
+    // Treat provider metadata as untrusted input.
+    if time.len()<20||time.len()>30||!time.ends_with('Z')
+        ||!time.bytes().all(|c|c.is_ascii_digit()||matches!(c,b'-'|b'T'|b':'|b'.'|b'Z')){
+        return Err("Invalid Meteosat observation TIME".into());
+    }
+    Ok(format!("{}&TIME={time}",wms_url()))
+}
+
+pub fn epic_latest_image(json: &str) -> Result<ObservedImage, String> {
     let list: serde_json::Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
     let records = list.as_array().ok_or("EPIC result is not a list")?;
     let latest = records.iter()
@@ -47,8 +103,15 @@ pub fn epic_image_url(json: &str) -> Result<String, String> {
         || !day.chars().enumerate().all(|(i,c)| i == 4 || i == 7 || c.is_ascii_digit()) {
         return Err("Invalid EPIC date".into());
     }
-    Ok(format!("https://epic.gsfc.nasa.gov/archive/natural/{}/{}/{}/jpg/{}.jpg",
-        &day[0..4], &day[5..7], &day[8..10], image))
+    Ok(ObservedImage {
+        url: format!("https://epic.gsfc.nasa.gov/archive/natural/{}/{}/{}/jpg/{}.jpg",
+            &day[0..4], &day[5..7], &day[8..10], image),
+        observed_at: date.to_string(),
+    })
+}
+
+pub fn epic_image_url(json: &str) -> Result<String,String> {
+    epic_latest_image(json).map(|selected|selected.url)
 }
 
 pub fn himawari_tiles(latest_json: &str) -> Result<Vec<String>, String> {
@@ -128,6 +191,22 @@ mod tests {
         assert_eq!(west[0],"https://cdn.star.nesdis.noaa.gov/GOES18/ABI/FD/GEOCOLOR/5424x5424.jpg");
         assert!(west[1].ends_with("/1808x1808.jpg"));
         assert!(goes_cdn_urls("NASA EPIC").is_err());
+    }
+    #[test] fn wms_selects_last_observation_not_default(){
+        let cap=r#"<WMS_Capabilities><Layer><Layer><Name>some:other</Name><Extent name="time">2020-01-01T00:00:00Z</Extent></Layer><Layer><Name>mtg_fd:rgb_geocolour</Name><Extent name="time" default="2026-10-08T12:00:00Z">2026-10-09T11:00:00Z,2026-10-09T11:10:00Z,2026-10-09T11:20:00Z</Extent></Layer></Layer></WMS_Capabilities>"#;
+        let time=meteosat_latest_time(cap).unwrap();
+        assert_eq!(time,"2026-10-09T11:20:00Z");
+        assert!(wms_url_at(&time).unwrap().contains("TIME=2026-10-09T11:20:00Z"));
+        assert!(wms_url_at("2026-10-09T11:20:00Z&LAYERS=evil").is_err());
+        let range=r#"<Layer><Name>mtg_fd:rgb_geocolour</Name><Dimension name='time' units='ISO8601'>2026-10-08T10:00:00Z/2026-10-09T11:20:00Z/PT10M</Dimension></Layer>"#;
+        assert_eq!(meteosat_latest_time(range).unwrap(),"2026-10-09T11:20:00Z");
+        assert!(meteosat_latest_time("<Layer><Name>mtg_fd:rgb_geocolour</Name></Layer>").is_err());
+    }
+    #[test]fn epic_reports_observation_date(){
+        let data=r#"[{"image":"epic_1b_20261008000000","date":"2026-10-08 00:00:00"},{"image":"epic_1b_20261008120000","date":"2026-10-08 12:00:00"}]"#;
+        let record=epic_latest_image(data).unwrap();
+        assert_eq!(record.observed_at,"2026-10-08 12:00:00");
+        assert!(record.url.ends_with("/epic_1b_20261008120000.jpg"));
     }
     #[test] fn parses_nasa_json() {
         let url = epic_image_url(r#"[{"image":"epic_a","date":"2026-01-09 02:02:00"},{"image":"epic_b","date":"2026-01-10 00:00:00"}]"#).unwrap();
