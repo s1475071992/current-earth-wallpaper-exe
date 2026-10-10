@@ -107,6 +107,24 @@ fn download_image<F:FnMut(String)>(
     log(format!("Download complete: {:.2} MiB / {:.1}s",len as f64/1048576.0,started.elapsed().as_secs_f32()));
     check(cancel)
 }
+/// A WMS server can reply with HTTP 200 and a ServiceException XML payload.
+/// Do not let such a response replace a valid per-desktop wallpaper.
+fn validate_wms_image(path:&Path)->Result<(),String>{
+    let mut file=fs::File::open(path).map_err(|e|e.to_string())?;
+    let mut header=[0u8;8];
+    file.read_exact(&mut header).map_err(|_|"Meteosat WMS returned an empty or truncated image".to_string())?;
+    let jpeg=header.starts_with(&[0xff,0xd8,0xff]);
+    let png=header==[0x89,b'P',b'N',b'G',13,10,26,10];
+    if !jpeg && !png {
+        return Err("Meteosat WMS returned non-image data (possibly a ServiceException)".into());
+    }
+    if file.metadata().map_err(|e|e.to_string())?.len()<4096 {
+        return Err("Meteosat WMS returned an implausibly small image".into());
+    }
+    imaging::load_scaled(path,48,None)
+        .map_err(|e|format!("Meteosat WMS image decode failed: {e}"))?;
+    Ok(())
+}
 pub fn run_once(cfg:&AppConfig,cancel:&AtomicBool,mut log:impl FnMut(String))->Result<PathBuf,String>{
     run_once_in_desktop(cfg,None,cancel,&mut log)
 }
@@ -149,18 +167,48 @@ fn run_once_impl(cfg:&AppConfig,display:Option<&Monitor>,desktop:Option<&str>,re
         SourceKind::Direct | SourceKind::Goes | SourceKind::Epic | SourceKind::Wms => {
             let image_path=temp_file(&folder,"download.jpg",&mut scratch);
             match source.kind {
-                SourceKind::Direct|SourceKind::Wms=>{
-                    let url=if source.kind==SourceKind::Wms {
+                SourceKind::Direct=>{
+                    download_image(source.home_url,&image_path,70*1048576,cancel,&mut log)?;
+                },
+                SourceKind::Wms=>{
+                    check(cancel)?;
+                    log("EUMETSAT: query latest published Meteosat-12 WMS observation time".into());
+                    let cap=http::get_text(&sources::wms_capabilities_url(),24*1048576)
+                        .map_err(|e|format!("Meteosat GetCapabilities failed: {e}"))?;
+                    check(cancel)?;
+                    let latest=sources::meteosat_latest_time(&cap)?;
+                    log(format!("Meteosat-12 latest advertised observation (UTC): {latest}"));
+                    let candidates=sources::wms_retry_times(&latest)?;
+                    let mut last_error=String::new();
+                    let mut downloaded=false;
+                    for (index,time) in candidates.iter().enumerate(){
                         check(cancel)?;
-                        log("EUMETSAT: query latest published Meteosat-12 WMS observation time".into());
-                        let cap=http::get_text(&sources::wms_capabilities_url(),24*1048576)
-                            .map_err(|e|format!("Meteosat GetCapabilities failed: {e}"))?;
-                        check(cancel)?;
-                        let latest=sources::meteosat_latest_time(&cap)?;
-                        log(format!("Meteosat-12 actual observation (UTC): {latest}"));
-                        sources::wms_url_at(&latest)?
-                    }else{source.home_url.to_string()};
-                    download_image(&url,&image_path,70*1048576,cancel,&mut log)?;
+                        if index>0 {
+                            log(format!("Meteosat 最新时间片尚不可用；尝试较早时间片 {time}"));
+                        }
+                        let url=sources::wms_url_at(time)?;
+                        let result=download_image(&url,&image_path,70*1048576,cancel,&mut log)
+                            .and_then(|_|validate_wms_image(&image_path));
+                        match result {
+                            Ok(())=>{
+                                if index>0 {
+                                    log(format!("Meteosat 已回退到可用观测时间 (UTC): {time}"));
+                                }
+                                downloaded=true;
+                                break;
+                            },
+                            Err(error)=>{
+                                check(cancel)?;
+                                last_error=error;
+                                log(format!("Meteosat WMS 时间片 {time} 失败：{last_error}"));
+                            },
+                        }
+                    }
+                    if !downloaded {
+                        return Err(format!(
+                            "Meteosat WMS 最近 {} 个时间片均失败；最后错误：{last_error}",
+                            candidates.len()));
+                    }
                 },
                 SourceKind::Goes=>{
                     let links=sources::goes_cdn_urls(source.name)?;
