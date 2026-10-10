@@ -34,7 +34,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Release build failed" }
           Pop-Location
           $manifest = Get-Content rust-native/Cargo.toml -Raw
-          if (-not $manifest.Contains('version = "1.1.1"')) { throw "Manifest version mismatch" }
+          if (-not $manifest.Contains('version = "1.1.2"')) { throw "Manifest version mismatch" }
           $file = "rust-native/target/release/CurrentEarthWallpaperNative.exe"
           $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $file))
           if ($bytes.Length -lt 10000 -or $bytes[0] -ne 77 -or $bytes[1] -ne 90) {
