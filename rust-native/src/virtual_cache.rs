@@ -20,7 +20,7 @@ pub fn target(folder:&Path,id:Option<&str>,monitor:Option<&Monitor>)->PathBuf{
 }
 fn metadata_path(bmp:&Path)->PathBuf{bmp.with_extension("meta.json")}
 #[derive(Serialize,Deserialize)]
-struct Meta {source:String, modified_unix:u64}
+struct Meta {source:String, modified_unix:u64, #[serde(default)] image_fingerprint:Option<String>}
 fn meta_valid(path:&Path,source:&str)->bool {
     fs::read(metadata_path(path)).ok()
         .and_then(|b|serde_json::from_slice::<Meta>(&b).ok())
@@ -43,6 +43,18 @@ fn bitmap_geometry_matches(path:&Path,monitor:Option<&Monitor>)->bool{
         .and_then(|pixels|pixels.checked_mul(4))
         .map(u64::from) else{return false;};
     file.metadata().is_ok_and(|meta|meta.len()>=54+size)
+}
+/// Return the existing stable BMP if the satellite pixels and render options
+/// are unchanged. This prevents rewriting the exact same picture endlessly
+/// when EPIC or Meteosat publishes no newer observation.
+pub fn unchanged_image(folder:&Path,id:Option<&str>,monitor:Option<&Monitor>,
+    source:&str,fingerprint:&str)->Option<PathBuf>{
+    let dest=target(folder,id,monitor);
+    if !bitmap_geometry_matches(&dest,monitor){return None;}
+    let meta=fs::read(metadata_path(&dest)).ok()
+        .and_then(|b|serde_json::from_slice::<Meta>(&b).ok())?;
+    (meta.source==source && meta.image_fingerprint.as_deref()==Some(fingerprint))
+        .then_some(dest)
 }
 /// Cached stable BMP for one pair, regardless of age. Used only for fast
 /// reapplication after switching virtual desktops: never fetch network data.
@@ -101,6 +113,10 @@ fn replace_file(src:&Path,dest:&Path)->Result<(),String>{
 /// Render has already completed into a scratch BMP. Publish one named file per
 /// profile atomically, then let the caller explicitly re-apply its pathname.
 pub fn save(folder:&Path,id:Option<&str>,monitor:Option<&Monitor>,source:&str,rendered:&Path)->Result<PathBuf,String>{
+    save_identified(folder,id,monitor,source,rendered,None)
+}
+pub fn save_identified(folder:&Path,id:Option<&str>,monitor:Option<&Monitor>,source:&str,
+    rendered:&Path,image_fingerprint:Option<&str>)->Result<PathBuf,String>{
     fs::create_dir_all(folder).map_err(|e|e.to_string())?;
     let dest=target(folder,id,monitor);
     let tmp=folder.join(format!(".cew-{}-publish-{}.tmp",
@@ -111,7 +127,8 @@ pub fn save(folder:&Path,id:Option<&str>,monitor:Option<&Monitor>,source:&str,re
         return Err(e);
     }
     let meta=Meta{source:source.into(),
-        modified_unix:SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()};
+        modified_unix:SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+        image_fingerprint:image_fingerprint.map(str::to_string)};
     let metapath=metadata_path(&dest);
     // Metadata is advisory; failure must NOT destroy the updated wallpaper.
     fs::write(&metapath,serde_json::to_vec(&meta).map_err(|e|e.to_string())?)
@@ -169,6 +186,28 @@ mod tests{
         assert!(cached_pair(&folder,desk,&changed,"GOES-East").is_none());
         // Preserve the original image on disk until a proper-sized render finishes.
         assert!(path.exists());
+        fs::remove_dir_all(folder).unwrap();
+    }
+    #[test]fn unchanged_detection_requires_same_image_and_render_identity(){
+        let folder=std::env::temp_dir().join(format!("cew-image-check-{}-{:?}",
+            std::process::id(),std::thread::current().id()));
+        fs::create_dir_all(&folder).unwrap();
+        let src=folder.join("test.bmp");
+        let w=48u32;let h=32u32;
+        let mut bmp=vec![0u8;54+(w*h*4) as usize];
+        bmp[0..2].copy_from_slice(b"BM");
+        bmp[18..22].copy_from_slice(&w.to_le_bytes());
+        bmp[22..26].copy_from_slice(&h.to_le_bytes());
+        bmp[28..30].copy_from_slice(&32u16.to_le_bytes());
+        fs::write(&src,&bmp).unwrap();
+        let screen=Monitor{id:"SCREEN".into(),width:w,height:h};
+        assert!(unchanged_image(&folder,None,Some(&screen),"NASA EPIC","abc").is_none());
+        save_identified(&folder,None,Some(&screen),"NASA EPIC",&src,Some("abc")).unwrap();
+        assert!(unchanged_image(&folder,None,Some(&screen),"NASA EPIC","abc").is_some());
+        assert!(unchanged_image(&folder,None,Some(&screen),"NASA EPIC","def").is_none());
+        assert!(unchanged_image(&folder,None,Some(&screen),"GOES-East","abc").is_none());
+        let resized=Monitor{id:"SCREEN".into(),width:64,height:h};
+        assert!(unchanged_image(&folder,None,Some(&resized),"NASA EPIC","abc").is_none());
         fs::remove_dir_all(folder).unwrap();
     }
     #[test]fn one_path_per_pair_even_as_source_changes(){
